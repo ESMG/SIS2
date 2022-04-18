@@ -135,6 +135,8 @@ type, public :: SIS_C_dyn_CS ; private
   real, pointer, dimension(:,:) :: Tb_v=>NULL() !< Basal stress component at v-points
                                                 !! [R Z L T-2 -> kg m-1 s-2]
   real, pointer, dimension(:,:) :: sigma_b=>NULL()   !< !< Bottom depth variance [Z ~> m].
+  real, pointer, dimension(:,:) :: extra_depth=>NULL() !< !< Bottom depth change for
+                                                !! better landfast ice performance [Z ~> m].
 
   logical :: FirstCall = .true. !< If true, this module has not been called before
   !>@{ Diagnostic IDs
@@ -181,6 +183,7 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
 #include "version_variable.h"
   character(len=40) :: mdl = "SIS_C_dyn" ! This module's name.
   character(len=200) :: filename, h2_file, inputdir
+  character(len=200) :: extra_depth_file = ""
   logical           :: debug
   real, parameter   :: missing = -1e34
 
@@ -336,7 +339,7 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
                    "Small number in ITD landfast ice.", &
                    units="nondim", default=1.0e-20)
     call get_param(param_file, mdl, "BASAL_STRESS_SCALE", CS%onemeter, &
-                   "Scale factor in ITD landfast ice.", &
+                   "Parameter to make units work in landfast ice.", &
                    units="m", default=1.0, scale=US%m_to_Z)
     call get_param(param_file, mdl, "BASAL_STRESS_CUTOFF", CS%basal_stress_cutoff, &
                    "Scale factor in ITD landfast ice.", &
@@ -363,6 +366,13 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
     call get_param(param_file, mdl, "BASAL_STRESS_NCAT_I", CS%ncat_i, &
                    "Number of ice thickness categories in landfast ice computation.", &
                    default=100)
+    call get_param(param_file, mdl, "BASAL_STRESS_EXTRA_DEPTH", extra_depth_file, &
+                   "Number of ice thickness categories in landfast ice computation.")
+    if (len(extra_depth_file) > 0) then
+      call SIS_error(WARNING, extra_depth_file)
+!     allocate(CS%extra_depth(G%isd:G%ied,G%jsd:G%jed), source=0.0)
+!     call MOM_read_data(filename, 'extra_depth', CS%extra_depth, G%domain, scale=US%m_to_Z**2)
+    endif
   endif
 
 !  if (len_trim(dirs%output_directory) > 0) then
@@ -1900,6 +1910,7 @@ subroutine basal_stress_coeff_itd(G, IG, IST, sea_lev, CS)
           sea_lev(i,j) < CS%basal_stress_max_depth) then
 
         mu_b = G%bathyT(i,j) + sea_lev(i,j)         ! (hwater) mean of PDF (normal dist) bathymetry
+        if (associated(CS%extra_depth)) mu_b = mu_b + CS%extra_depth(i,j)
         wid_i = CS%basal_stress_max_depth/CS%ncat_i    ! width of ice categories
         wid_b = 6.0*CS%sigma_b(i,j)/CS%ncat_b          ! width of bathymetry categories (6 sigma_b = 2x3 sigma_b)
 
@@ -2253,6 +2264,7 @@ subroutine SIS_C_dyn_end(CS)
   if (associated(CS%Tb_u)) deallocate(CS%Tb_u)
   if (associated(CS%Tb_v)) deallocate(CS%Tb_v)
   if (associated(CS%sigma_b)) deallocate(CS%sigma_b)
+  if (associated(CS%extra_depth)) deallocate(CS%extra_depth)
 
   deallocate(CS)
 end subroutine SIS_C_dyn_end

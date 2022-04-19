@@ -23,6 +23,8 @@ use MOM_domains,       only : MOM_domain_type, clone_MOM_domain
 use MOM_hor_index,     only : hor_index_type
 use MOM_io,            only : open_file, APPEND_FILE, ASCII_FILE, MULTIPLE, SINGLE_FILE
 use MOM_io,            only : MOM_read_data
+use MOM_open_boundary, only : OBC_NONE
+use MOM_open_boundary, only : OBC_DIRECTION_E, OBC_DIRECTION_W, OBC_DIRECTION_N, OBC_DIRECTION_S
 use MOM_time_manager,  only : time_type, real_to_time, operator(+), operator(-)
 use MOM_time_manager,  only : set_date, get_time, get_date
 use MOM_unit_scaling,  only : unit_scale_type
@@ -32,6 +34,7 @@ use SIS_diag_mediator, only : query_SIS_averaging_enabled, enable_SIS_averaging
 use SIS_diag_mediator, only : register_diag_field=>register_SIS_diag_field
 use SIS_debugging,     only : chksum, Bchksum, hchksum, uvchksum
 use SIS_debugging,     only : check_redundant_B, check_redundant_C
+use SIS_open_boundary, only : ice_OBC_type, OBC_segment_type
 use SIS_restart,       only : register_restart_field, only_read_from_restarts, SIS_restart_CS
 use SIS_restart,       only : query_initialized=>query_inited
 use SIS_framework,     only : safe_alloc
@@ -577,7 +580,7 @@ end subroutine find_ice_strength
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
 !> SIS_C_dynamics takes a single dynamics timestep with EVP subcycles
 subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
-                          sea_lev, fxoc, fyoc, dt_slow, G, US, CS)
+                          sea_lev, fxoc, fyoc, dt_slow, G, US, CS, OBC)
 
   type(SIS_hor_grid_type),           intent(inout) :: G   !< The horizontal grid type
   real, dimension(SZI_(G),SZJ_(G)),  intent(in   ) :: ci  !< Sea ice concentration [nondim]
@@ -601,6 +604,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                                                             !! dynamics are to be advanced [T ~> s].
   type(unit_scale_type),             intent(in)    :: US    !< A structure with unit conversion factors
   type(SIS_C_dyn_CS),                pointer       :: CS    !< The control structure for this module
+  type(ice_OBC_type),                pointer       :: OBC   !< Open boundary structure.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
@@ -741,6 +745,8 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
   logical :: do_trunc_its  ! If true, overly large velocities in the iterations are truncated.
   integer :: halo_sh_Ds  ! The halo size that can be used in calculating sh_Ds.
   integer :: i, j, isc, iec, jsc, jec, n
+  logical :: apply_OBC = .false.
+
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
   if (.not.associated(CS)) call SIS_error(FATAL, &
@@ -750,6 +756,10 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
          "SIS_C_dynamics is written to require a 2-point halo or 1-point and symmetric memory.")
 
   halo_sh_Ds = min(isc-G%isd, jsc-G%jsd, 2)
+
+  if (associated(OBC)) then ; if (OBC%OBC_pe) then
+    apply_OBC = .true.
+  endif ; endif
 
   ! Zero these arrays to accumulate sums.
   fxoc(:,:) = 0.0 ; fyoc(:,:) = 0.0

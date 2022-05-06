@@ -5,8 +5,8 @@ module SIS_fixed_initialization
 ! This file is part of SIS2. See LICENSE.md for the license.
 
 use SIS_debugging, only       : hchksum, Bchksum, uvchksum, chksum
-use SIS_open_boundary, only   : ice_OBC_type, open_boundary_config
-use SIS_open_boundary, only   : open_boundary_impose_land_mask
+use SIS_open_boundary, only   : ice_OBC_type, ice_open_boundary_config
+use SIS_open_boundary, only   : ice_OBC_impose_land_mask
 
 use MOM_domains, only         : pass_var
 use MOM_dyn_horgrid, only     : dyn_horgrid_type
@@ -41,7 +41,9 @@ subroutine SIS_initialize_fixed(G, US, PF, write_geom, output_dir, OBC)
                                                 !! to parse for model parameter values.
   logical,                 intent(in)    :: write_geom !< If true, write grid geometry files.
   character(len=*),        intent(in)    :: output_dir !< The directory into which to write files.
-  type(ice_OBC_type),      pointer       :: OBC  !< Open boundary structure.
+  type(ice_OBC_type),      pointer       :: OBC !< This open boundary condition type specifies
+                                                !! whether, where, and what open boundary
+                                                !! conditions are used.
 
   real :: pi ! pi = 3.1415926... calculated as 4*atan(1)
 
@@ -76,10 +78,10 @@ subroutine SIS_initialize_fixed(G, US, PF, write_geom, output_dir, OBC)
   call initialize_masks(G, PF, US)
 
   ! Determine the position of any open boundaries
-  call open_boundary_config(G, US, PF, OBC)
+  call ice_open_boundary_config(G, US, PF, OBC)
 
   ! Make OBC mask consistent with land mask
-  call open_boundary_impose_land_mask(OBC, G, G%areaCu, G%areaCv, US)
+  call ice_OBC_impose_land_mask(OBC, G, G%areaCu, G%areaCv, US)
 
   if (debug) then
     call hchksum(G%bathyT, 'SIS_initialize_fixed: depth ', G%HI, &

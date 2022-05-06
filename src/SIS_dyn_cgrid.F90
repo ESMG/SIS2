@@ -34,7 +34,7 @@ use SIS_diag_mediator, only : query_SIS_averaging_enabled, enable_SIS_averaging
 use SIS_diag_mediator, only : register_diag_field=>register_SIS_diag_field
 use SIS_debugging,     only : chksum, Bchksum, hchksum, uvchksum
 use SIS_debugging,     only : check_redundant_B, check_redundant_C
-use SIS_open_boundary, only : ice_OBC_type, OBC_segment_type
+use SIS_open_boundary, only : ice_OBC_type, ice_OBC_segment_type
 use SIS_restart,       only : register_restart_field, only_read_from_restarts, SIS_restart_CS
 use SIS_restart,       only : query_initialized=>query_inited
 use SIS_framework,     only : safe_alloc
@@ -604,7 +604,9 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                                                             !! dynamics are to be advanced [T ~> s].
   type(unit_scale_type),             intent(in)    :: US    !< A structure with unit conversion factors
   type(SIS_C_dyn_CS),                pointer       :: CS    !< The control structure for this module
-  type(ice_OBC_type),                pointer       :: OBC   !< Open boundary structure.
+  type(ice_OBC_type),                pointer       :: OBC   !< This open boundary condition type specifies
+                                                            !! whether, where, and what open boundary
+                                                            !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
@@ -1687,7 +1689,9 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, OBC, 
                                                              !! [R Z L2 T-2 ~> Pa m].
   type(unit_scale_type),              intent(in)    :: US    !< A structure with unit conversion factors
   type(SIS_C_dyn_CS),                 pointer       :: CS    !< The control structure for this module
-  type(ice_OBC_type),                 pointer       :: OBC   !< Open boundary structure.
+  type(ice_OBC_type),                 pointer       :: OBC   !< This open boundary condition type specifies
+                                                             !! whether, where, and what open boundary
+                                                             !! conditions are used.
   real, optional,                     intent(in)    :: limit !< A factor by which the strength limits
                                                              !! are changed [nondim]
 

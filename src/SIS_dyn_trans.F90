@@ -50,7 +50,7 @@ use SIS_framework,     only : coupler_type_initialized, coupler_type_send_data, 
 use SIS_hor_grid,      only : SIS_hor_grid_type
 use SIS_ice_diags,     only : ice_state_diags_type, register_ice_state_diagnostics
 use SIS_ice_diags,     only : post_ocean_sfc_diagnostics, post_ice_state_diagnostics
-use SIS_open_boundary, only : ice_OBC_type, OBC_segment_type
+use SIS_open_boundary, only : ice_OBC_type, ice_OBC_segment_type
 use SIS_sum_output,    only : write_ice_statistics, SIS_sum_output_init, SIS_sum_out_CS
 use SIS_tracer_flow_control, only : SIS_tracer_flow_control_CS
 use SIS_transport,     only : SIS_transport_init, SIS_transport_end
@@ -331,7 +331,9 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
   type(icebergs),             pointer       :: icebergs_CS !< A control structure for the iceberg model.
   type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp !< The structure for controlling calls to
                                                    !! auxiliary ice tracer packages
-  type(ice_OBC_type),         pointer       :: OBC  !< Open boundary structure.
+  type(ice_OBC_type),         pointer       :: OBC !< This open boundary condition type specifies
+                                                   !! whether, where, and what open boundary
+                                                   !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))   :: &
@@ -405,7 +407,7 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
                                G, US, IG, CS, OBC)
 
       ! Complete the category-resolved mass and tracer transport and update the ice state type.
-      call complete_IST_transport(CS%DS2d, CS%CAS, IST, dt_adv_cycle, G, US, IG, CS)
+      call complete_IST_transport(CS%DS2d, CS%CAS, IST, dt_adv_cycle, G, US, IG, CS, OBC)
 
     else !  (.not.CS%merged_cont)
 
@@ -616,7 +618,7 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
       call enable_SIS_averaging(dt_slow_dyn_sec, Time_cycle_start + real_to_time(nds*dt_slow_dyn_sec), CS%diag)
 
       call ice_cat_transport(CS%CAS, IST%TrReg, dt_slow_dyn, CS%adv_substeps, G, US, IG, CS%SIS_transport_CSp, &
-                             uc=IST%u_ice_C, vc=IST%v_ice_C)
+                             OBC, uc=IST%u_ice_C, vc=IST%v_ice_C)
 
       if (DS2d%nts==0) then
         if (CS%do_ridging) then
@@ -667,7 +669,9 @@ subroutine SIS_multi_dyn_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, 
   type(icebergs),             pointer       :: icebergs_CS !< A control structure for the iceberg model.
   type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp !< The structure for controlling calls to
                                                    !! auxiliary ice tracer packages
-  type(ice_OBC_type),         pointer       :: OBC !< Open boundary structure.
+  type(ice_OBC_type),         pointer       :: OBC !< This open boundary condition type specifies
+                                                   !! whether, where, and what open boundary
+                                                   !! conditions are used.
   logical,          optional, intent(in)    :: start_cycle !< This indicates whether this call is to be
                                                    !! treated as the first call to SIS_multi_dyn_trans
                                                    !! in a time-stepping cycle; missing is like true.
@@ -714,7 +718,7 @@ subroutine SIS_multi_dyn_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, 
     ! Complete the category-resolved mass and tracer transport and update the ice state type.
     ! This must be done before the next thermodynamic step.
     if (end_of_cycle) &
-      call complete_IST_transport(CS%DS2d, CS%CAS, IST, dt_adv_cycle, G, US, IG, CS)
+      call complete_IST_transport(CS%DS2d, CS%CAS, IST, dt_adv_cycle, G, US, IG, CS, OBC)
 
     if (CS%column_check .and. IST%valid_IST) &  ! This is just here from early debugging exercises,
       call write_ice_statistics(IST, CS%Time, CS%n_calls, G, US, IG, CS%sum_output_CSp, &
@@ -733,16 +737,19 @@ end subroutine SIS_multi_dyn_trans
 
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
 !> Complete the category-resolved mass and tracer transport and update the ice state type.
-subroutine complete_IST_transport(DS2d, CAS, IST, dt_adv_cycle, G, US, IG, CS)
+subroutine complete_IST_transport(DS2d, CAS, IST, dt_adv_cycle, G, US, IG, CS, OBC)
   type(ice_state_type),          intent(inout) :: IST !< A type describing the state of the sea ice
   type(dyn_state_2d),            intent(inout) :: DS2d !< A simplified 2-d description of the ice state
                                                    !! integrated across thickness categories and layers.
   type(cell_average_state_type), intent(inout) :: CAS !< A structure with ocean-cell averaged masses.
   real,                          intent(in)    :: dt_adv_cycle !< The time since the last IST transport [T ~> s].
   type(SIS_hor_grid_type),       intent(inout) :: G   !< The horizontal grid type
-  type(unit_scale_type),         intent(in)    :: US    !< A structure with unit conversion factors
+  type(unit_scale_type),         intent(in)    :: US  !< A structure with unit conversion factors
   type(ice_grid_type),           intent(inout) :: IG  !< The sea-ice specific grid type
   type(dyn_trans_CS),            pointer       :: CS  !< The control structure for the SIS_dyn_trans module
+  type(ice_OBC_type),            pointer       :: OBC !< This open boundary condition type specifies
+                                                      !! whether, where, and what open boundary
+                                                      !! conditions are used.
 
   integer :: i, j, k, isc, iec, jsc, jec
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB
@@ -754,7 +761,7 @@ subroutine complete_IST_transport(DS2d, CAS, IST, dt_adv_cycle, G, US, IG, CS)
   call cpu_clock_begin(iceClock8)
   ! Do the transport of mass and tracers by category and vertical layer.
   call ice_cat_transport(CS%CAS, IST%TrReg, dt_adv_cycle, DS2d%nts, G, US, IG, &
-                         CS%SIS_transport_CSp, mca_tot=DS2d%mca_step(:,:,0:DS2d%nts), &
+                         CS%SIS_transport_CSp, OBC, mca_tot=DS2d%mca_step(:,:,0:DS2d%nts), &
                          uh_tot=DS2d%uh_step(:,:,1:DS2d%nts), vh_tot=DS2d%vh_step(:,:,1:DS2d%nts))
   ! Convert the cell-averaged state back to the ice-state type, adjusting the
   ! category mass distributions, doing ridging, and updating the partition sizes.
@@ -913,7 +920,9 @@ subroutine SIS_merged_dyn_cont(OSS, FIA, IOF, DS2d, IST, dt_cycle, Time_start, G
   type(unit_scale_type),      intent(in)    :: US  !< A structure with unit conversion factors
   type(ice_grid_type),        intent(inout) :: IG  !< The sea-ice specific grid type
   type(dyn_trans_CS),         pointer       :: CS  !< The control structure for the SIS_dyn_trans module
-  type(ice_OBC_type),         pointer       :: OBC !< Open boundary structure.
+  type(ice_OBC_type),         pointer       :: OBC !< This open boundary condition type specifies
+                                                   !! whether, where, and what open boundary
+                                                   !! conditions are used.
   logical,          optional, intent(in)    :: end_call !< If present and false, this call is
                                                    !! the last in the series of advective updates.
 
@@ -1159,7 +1168,9 @@ subroutine slab_ice_dyn_trans(IST, OSS, FIA, IOF, dt_slow, CS, G, US, IG, tracer
   type(dyn_trans_CS),         pointer       :: CS  !< The control structure for the SIS_dyn_trans module
   type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp !< The structure for controlling calls to
                                                    !! auxiliary ice tracer packages
-  type(ice_OBC_type),         pointer       :: OBC !< Open boundary structure.
+  type(ice_OBC_type),         pointer       :: OBC !< This open boundary condition type specifies
+                                                   !! whether, where, and what open boundary
+                                                   !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))   :: &
@@ -1617,13 +1628,15 @@ subroutine set_ocean_top_stress_Cgrid(IOF, windstr_x_water, windstr_y_water, &
   real, dimension(SZI_(G),SZJ_(G),0:IG%CatIce), &
                              intent(in)    :: part_size !< The fractional area coverage of the ice
                                                   !! thickness categories [nondim], 0-1
-  type(ice_OBC_type),        pointer       :: OBC  !< Open boundary structure.
+  type(ice_OBC_type),        pointer       :: OBC !< This open boundary condition type specifies
+                                                  !! whether, where, and what open boundary
+                                                  !! conditions are used.
 
   real    :: ps_vel ! part_size interpolated to a velocity point [nondim].
   integer :: i, j, k, isc, iec, jsc, jec, ncat
   integer :: l_seg
   logical :: local_open_u_BC, local_open_v_BC
-  type(OBC_segment_type), pointer :: segment => NULL()
+  type(ice_OBC_segment_type), pointer :: segment => NULL()
 
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec ; ncat = IG%CatIce
 
@@ -1898,13 +1911,15 @@ subroutine set_ocean_top_stress_C2(IOF, windstr_x_water, windstr_y_water, &
   real, dimension(SZI_(G),SZJ_(G)), &
                              intent(in)    :: ice_cover !< The fractional ice area coverage [nondim], 0-1
   type(unit_scale_type),     intent(in)    :: US  !< A structure with unit conversion factors
-  type(ice_OBC_type),        pointer       :: OBC  !< Open boundary structure.
+  type(ice_OBC_type),        pointer       :: OBC !< This open boundary condition type specifies
+                                                  !! whether, where, and what open boundary
+                                                  !! conditions are used.
 
   real    :: ps_ice, ps_ocn ! ice_free and ice_cover interpolated to a velocity point [nondim].
   integer :: i, j, k, isc, iec, jsc, jec
   integer :: l_seg
   logical :: local_open_u_BC, local_open_v_BC
-  type(OBC_segment_type), pointer :: segment => NULL()
+  type(ice_OBC_segment_type), pointer :: segment => NULL()
 
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
@@ -2055,7 +2070,9 @@ subroutine set_wind_stresses_C(FIA, ice_cover, ice_free, WindStr_x_Cu, WindStr_y
   real,                              intent(in)   :: max_ice_cover !< The fractional ice coverage
                         !! that is close enough to 1 to be complete for the purpose of calculating
                         !! wind stresses [nondim].
-  type(ice_OBC_type),                pointer      :: OBC  !< Open boundary structure.
+  type(ice_OBC_type),                pointer      :: OBC !< This open boundary condition type specifies
+                                                   !! whether, where, and what open boundary
+                                                   !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))   :: &

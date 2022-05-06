@@ -3,17 +3,20 @@ module SIS_tracer_advect
 
 !* This file is a part of SIS2.  See LICENSE.md for the license.
 
-use MOM_cpu_clock, only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
-use MOM_cpu_clock, only : CLOCK_MODULE, CLOCK_ROUTINE
-use SIS_diag_mediator, only : post_SIS_data, query_SIS_averaging_enabled, SIS_diag_ctrl
-use SIS_diag_mediator, only : register_SIS_diag_field, safe_alloc_ptr, time_type
-use MOM_domains, only : pass_var, pass_vector, sum_across_PEs, max_across_PEs
-use MOM_error_handler, only : SIS_error=>MOM_error, FATAL, WARNING, SIS_mesg=>MOM_mesg
-use MOM_file_parser, only : get_param, log_version, param_file_type
-use MOM_unit_scaling, only : unit_scale_type
-use SIS_hor_grid, only : SIS_hor_grid_type
-use ice_grid, only : ice_grid_type
-use SIS_tracer_registry, only : SIS_tracer_registry_type, SIS_tracer_type, SIS_tracer_chksum
+use MOM_cpu_clock,            only : cpu_clock_id, cpu_clock_begin, cpu_clock_end
+use MOM_cpu_clock,            only : CLOCK_MODULE, CLOCK_ROUTINE
+use SIS_diag_mediator,        only : post_SIS_data, query_SIS_averaging_enabled, SIS_diag_ctrl
+use SIS_diag_mediator,        only : register_SIS_diag_field, safe_alloc_ptr, time_type
+use MOM_domains,              only : pass_var, pass_vector, sum_across_PEs, max_across_PEs
+use MOM_error_handler,        only : SIS_error=>MOM_error, FATAL, WARNING, SIS_mesg=>MOM_mesg
+use MOM_file_parser,          only : get_param, log_version, param_file_type
+use MOM_open_boundary,        only : OBC_NONE
+use MOM_open_boundary,        only : OBC_DIRECTION_E, OBC_DIRECTION_W, OBC_DIRECTION_N, OBC_DIRECTION_S
+use MOM_unit_scaling,         only : unit_scale_type
+use SIS_hor_grid,             only : SIS_hor_grid_type
+use SIS_open_boundary,        only : ice_OBC_type, ice_OBC_segment_type
+use ice_grid,                 only : ice_grid_type
+use SIS_tracer_registry,      only : SIS_tracer_registry_type, SIS_tracer_type, SIS_tracer_chksum
 
 implicit none ; private
 
@@ -51,7 +54,7 @@ integer :: id_clock_advect, id_clock_pass, id_clock_sync
 contains
 
 !> advect_SIS_tracers manages the advection of either the snow or ice tracers
-subroutine advect_SIS_tracers(h_prev, h_end, uhtr, vhtr, dt, G, US, IG, CS, TrReg, snow_tr ) ! (, OBC)
+subroutine advect_SIS_tracers(h_prev, h_end, uhtr, vhtr, dt, G, US, IG, CS, TrReg, snow_tr, OBC )
   type(SIS_hor_grid_type),     intent(inout) :: G     !< The horizontal grid type
   type(ice_grid_type),         intent(in)    :: IG    !< The sea-ice specific grid type
   real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)), &
@@ -73,8 +76,9 @@ subroutine advect_SIS_tracers(h_prev, h_end, uhtr, vhtr, dt, G, US, IG, CS, TrRe
   type(SIS_tracer_registry_type), pointer    :: TrReg !< A pointer to the SIS tracer registry.
   logical,                     intent(in)    :: snow_tr !< If true, advect the snow tracers, otherwise
                                                       !! advect the ice tracers.
-!  (in)      OBC - This open boundary condition type specifies whether, where,
-!                  and what open boundary conditions are used.
+  type(ice_OBC_type),          pointer       :: OBC   !< This open boundary condition type specifies
+                                                      !! whether, where, and what open boundary
+                                                      !! conditions are used.
 
   integer ntr
 
@@ -88,15 +92,15 @@ subroutine advect_SIS_tracers(h_prev, h_end, uhtr, vhtr, dt, G, US, IG, CS, TrRe
   call cpu_clock_begin(id_clock_advect)
   if (snow_tr) then
     if (CS%use_upwind2d) then
-      call advect_upwind_2d(TrReg%Tr_snow, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG)
+      call advect_upwind_2d(TrReg%Tr_snow, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, OBC)
     else
-      call advect_tracer(TrReg%Tr_snow, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS)
+      call advect_tracer(TrReg%Tr_snow, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS, OBC)
     endif
   else
     if (CS%use_upwind2d) then
-      call advect_upwind_2d(TrReg%Tr_ice, h_prev, h_end,  uhtr, vhtr, ntr, dt, G, US, IG)
+      call advect_upwind_2d(TrReg%Tr_ice, h_prev, h_end,  uhtr, vhtr, ntr, dt, G, US, IG, OBC)
     else
-      call advect_tracer(TrReg%Tr_ice, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS)
+      call advect_tracer(TrReg%Tr_ice, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS, OBC)
     endif
   endif
   call cpu_clock_end(id_clock_advect)
@@ -105,7 +109,7 @@ end subroutine advect_SIS_tracers
 
 !> This subroutine time steps the tracer concentrations using a monotonic, conservative,
 !! weakly diffusive scheme.
-subroutine advect_tracer(Tr, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS) ! (, OBC)
+subroutine advect_tracer(Tr, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS, OBC)
   type(SIS_tracer_type), dimension(ntr), &
                                intent(inout) :: Tr    !< The tracer concentrations being advected
   type(SIS_hor_grid_type),     intent(inout) :: G     !< The horizontal grid type
@@ -127,9 +131,9 @@ subroutine advect_tracer(Tr, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS) 
   type(unit_scale_type),       intent(in)    :: US    !< A structure with unit conversion factors
   type(SIS_tracer_advect_CS),  pointer       :: CS    !< The control structure returned by a previous
                                                       !! call to SIS_tracer_advect_init.
-! type(ocean_OBC_type),        pointer       :: OBC   ! < This open boundary condition type specifies
-                                                      ! ! whether, where, and what open boundary
-                                                      ! ! conditions are used.
+  type(ice_OBC_type),          pointer       :: OBC   !< This open boundary condition type specifies
+                                                      !! whether, where, and what open boundary
+                                                      !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)) :: &
@@ -311,12 +315,12 @@ subroutine advect_tracer(Tr, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS) 
         ! First, advect zonally.
         call advect_x(Tr, hprev, uhr, uh_neglect, domore_u, ntr, nL_max, Idt, &
                       isv, iev, jsv-stencil, jev+stencil, k, G, US, IG, &
-                      CS%usePPM, CS%usePCM, CS%fixed_mass_neglect, CS%Adcroft_CFL) !(, OBC)
+                      CS%usePPM, CS%usePCM, CS%fixed_mass_neglect, CS%Adcroft_CFL, OBC)
 
         ! Next, advect meridionally.
         call advect_y(Tr, hprev, vhr, vh_neglect, domore_v, ntr, nL_max, Idt, &
                       isv, iev, jsv, jev, k, G, US, IG, CS%usePPM, CS%usePCM, &
-                      CS%fixed_mass_neglect, CS%Adcroft_CFL) !(, OBC)
+                      CS%fixed_mass_neglect, CS%Adcroft_CFL, OBC)
 
         domore_k(k) = 0
         do j=jsv-stencil,jev+stencil ; if (domore_u(j,k)) domore_k(k) = 1 ; enddo
@@ -325,12 +329,12 @@ subroutine advect_tracer(Tr, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS) 
         ! First, advect meridionally.
         call advect_y(Tr, hprev, vhr, vh_neglect, domore_v, ntr, nL_max, Idt, &
                       isv-stencil, iev+stencil, jsv, jev, k, G, US, IG, &
-                      CS%usePPM, CS%usePCM, CS%fixed_mass_neglect, CS%Adcroft_CFL) !(, OBC)
+                      CS%usePPM, CS%usePCM, CS%fixed_mass_neglect, CS%Adcroft_CFL, OBC)
 
         ! Next, advect zonally.
         call advect_x(Tr, hprev, uhr, uh_neglect, domore_u, ntr, nL_max, Idt, &
                       isv, iev, jsv, jev, k, G, US, IG, CS%usePPM, CS%usePCM, &
-                      CS%fixed_mass_neglect, CS%Adcroft_CFL) !(, OBC)
+                      CS%fixed_mass_neglect, CS%Adcroft_CFL, OBC)
 
         domore_k(k) = 0
         do j=jsv,jev ; if (domore_u(j,k)) domore_k(k) = 1 ; enddo
@@ -357,7 +361,7 @@ subroutine advect_tracer(Tr, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, CS) 
 end subroutine advect_tracer
 
 !> advect_scalar does advection of a single scalar tracer field.
-subroutine advect_scalar(scalar, h_prev, h_end, uhtr, vhtr, dt, G, US, IG, CS) ! (, OBC)
+subroutine advect_scalar(scalar, h_prev, h_end, uhtr, vhtr, dt, G, US, IG, CS, OBC)
   type(SIS_hor_grid_type),     intent(inout) :: G     !< The horizontal grid type
   type(ice_grid_type),         intent(in)    :: IG    !< The sea-ice specific grid type
   real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)), &
@@ -378,6 +382,9 @@ subroutine advect_scalar(scalar, h_prev, h_end, uhtr, vhtr, dt, G, US, IG, CS) !
   type(unit_scale_type),       intent(in)    :: US    !< A structure with unit conversion factors
   type(SIS_tracer_advect_CS),  pointer       :: CS    !< The control structure returned by a previous
                                                       !! call to SIS_tracer_advect_init.
+  type(ice_OBC_type),          pointer       :: OBC   !< This open boundary condition type specifies
+                                                      !! whether, where, and what open boundary
+                                                      !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)) :: &
@@ -562,12 +569,12 @@ subroutine advect_scalar(scalar, h_prev, h_end, uhtr, vhtr, dt, G, US, IG, CS) !
           ! First, advect zonally.
           call advect_scalar_x(scalar, hprev, uhr, uh_neglect, domore_u, Idt, &
                         isv, iev, jsv-stencil, jev+stencil, k, G, US, IG, CS%usePPM, CS%usePCM, &
-                        CS%fixed_mass_neglect, CS%Adcroft_CFL) !(, OBC)
+                        CS%fixed_mass_neglect, CS%Adcroft_CFL, OBC)
 
           ! Next, advect meridionally.
           call advect_scalar_y(scalar, hprev, vhr, vh_neglect, domore_v, Idt, &
                         isv, iev, jsv, jev, k, G, US, IG, CS%usePPM, CS%usePCM, &
-                        CS%fixed_mass_neglect, CS%Adcroft_CFL) !(, OBC)
+                        CS%fixed_mass_neglect, CS%Adcroft_CFL, OBC)
 
           domore_k(k) = 0
           do j=jsv-stencil,jev+stencil ; if (domore_u(j,k)) domore_k(k) = 1 ; enddo
@@ -576,12 +583,12 @@ subroutine advect_scalar(scalar, h_prev, h_end, uhtr, vhtr, dt, G, US, IG, CS) !
           ! First, advect meridionally.
           call advect_scalar_y(scalar, hprev, vhr, vh_neglect, domore_v, Idt, &
                         isv-stencil, iev+stencil, jsv, jev, k, G, US, IG, CS%usePPM, CS%usePCM, &
-                        CS%fixed_mass_neglect, CS%Adcroft_CFL) !(, OBC)
+                        CS%fixed_mass_neglect, CS%Adcroft_CFL, OBC)
 
           ! Next, advect zonally.
           call advect_scalar_x(scalar, hprev, uhr, uh_neglect, domore_u, Idt, &
                         isv, iev, jsv, jev, k, G, US, IG, CS%usePPM, CS%usePCM, &
-                        CS%fixed_mass_neglect, CS%Adcroft_CFL) !(, OBC)
+                        CS%fixed_mass_neglect, CS%Adcroft_CFL, OBC)
 
           domore_k(k) = 0
           do j=jsv,jev ; if (domore_u(j,k)) domore_k(k) = 1 ; enddo
@@ -611,7 +618,7 @@ end subroutine advect_scalar
 !> advect_scalar_x does 1-d flux-form advection in the x-direction
 !! using a monotonic piecewise constant, linear, or parabolic scheme.
 subroutine advect_scalar_x(scalar, hprev, uhr, uh_neglect, domore_u, Idt, is, ie, js, je, k, &
-                           G, US, IG, usePPM, usePCM, fixed_mass_neglect, Adcroft_CFL) ! (, OBC)
+                           G, US, IG, usePPM, usePCM, fixed_mass_neglect, Adcroft_CFL, OBC)
   type(SIS_hor_grid_type),     intent(inout) :: G     !< The horizontal grid type
   type(ice_grid_type),         intent(in)    :: IG    !< The sea-ice specific grid type
   real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)), &
@@ -645,6 +652,9 @@ subroutine advect_scalar_x(scalar, hprev, uhr, uh_neglect, domore_u, Idt, is, ie
                                                     !! old answers and should eventually be obsoleted.
   logical,                     intent(in)    :: Adcroft_CFL !< If true, use an Adcroft reciprocal of the
                                                     !! cell mass when computing the advective CFL number.
+  type(ice_OBC_type),          pointer       :: OBC   !< This open boundary condition type specifies
+                                                      !! whether, where, and what open boundary
+                                                      !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G)) :: &
@@ -771,7 +781,7 @@ end subroutine advect_scalar_x
 !> advect_x does 1-d flux-form advection of multiple tracers in the x-direction
 !! using a monotonic piecewise constant, linear, or parabolic scheme.
 subroutine advect_x(Tr, hprev, uhr, uh_neglect, domore_u, ntr, nL_max, Idt, is, ie, js, je, k, &
-                    G, US, IG, usePPM, usePCM, fixed_mass_neglect, Adcroft_CFL) ! (, OBC)
+                    G, US, IG, usePPM, usePCM, fixed_mass_neglect, Adcroft_CFL, OBC)
   type(SIS_hor_grid_type),     intent(inout) :: G     !< The horizontal grid type
   type(ice_grid_type),         intent(in)    :: IG    !< The sea-ice specific grid type
   type(SIS_tracer_type), dimension(ntr), &
@@ -784,9 +794,6 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, domore_u, ntr, nL_max, Idt, is, 
                                                       !! zonal faces [R Z L2 ~> kg].
   real, dimension(SZIB_(G),SZJ_(G)), &
                                intent(inout) :: uh_neglect !< A value of uhr that can be neglected [R Z L2 ~> kg].
-! type(ocean_OBC_type),        pointer       :: OBC   ! < This open boundary condition type specifies
-                                                      ! ! whether, where, and what open boundary
-                                                      ! ! conditions are used.
   logical, dimension(SZJ_(G),SZCAT_(IG)), &
                                intent(inout) :: domore_u !< True in rows with more advection to be done
   real,                        intent(in)    :: Idt   !< The inverse of the time increment [T-1 ~> s-1]
@@ -807,6 +814,9 @@ subroutine advect_x(Tr, hprev, uhr, uh_neglect, domore_u, ntr, nL_max, Idt, is, 
                                                     !! old answers and should eventually be obsoleted.
   logical,                     intent(in)    :: Adcroft_CFL !< If true, use an Adcroft reciprocal of the
                                                     !! cell mass when computing the advective CFL number.
+  type(ice_OBC_type),          pointer       :: OBC   !< This open boundary condition type specifies
+                                                      !! whether, where, and what open boundary
+                                                      !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G),nL_max,ntr) :: &
@@ -1141,7 +1151,7 @@ end subroutine kernel_PPMH3_Tr_x
 !> advect_scalar_y does 1-d flux-form advection in the y-direction using a
 !! monotonic piecewise constant, linear, or parabolic scheme.
 subroutine advect_scalar_y(scalar, hprev, vhr, vh_neglect, domore_v, Idt, is, ie, js, je, k, &
-                           G, US, IG, usePPM, usePCM, fixed_mass_neglect, Adcroft_CFL) ! (, OBC)
+                           G, US, IG, usePPM, usePCM, fixed_mass_neglect, Adcroft_CFL, OBC)
   type(SIS_hor_grid_type), intent(inout) :: G   !< The horizontal grid type
   type(ice_grid_type),     intent(in)    :: IG  !< The sea-ice specific grid type
   real, dimension(SZI_(G),SZJ_(G),SZCAT_(IG)), &
@@ -1154,9 +1164,6 @@ subroutine advect_scalar_y(scalar, hprev, vhr, vh_neglect, domore_v, Idt, is, ie
                                                 !! meridional faces [R Z L2 ~> kg].
   real, dimension(SZI_(G),SZJB_(G)), &
                            intent(inout) :: vh_neglect !< A value of vhr that can be neglected [R Z L2 ~> kg].
-! type(ocean_OBC_type),    pointer       :: OBC ! < This open boundary condition type specifies
-                                                ! ! whether, where, and what open boundary
-                                                ! ! conditions are used.
   logical, dimension(SZJB_(G),SZCAT_(IG)), &
                            intent(inout) :: domore_v !< True in rows with more advection to be done
   real,                    intent(in)    :: Idt !< The inverse of the time increment [T-1 ~> s-1]
@@ -1175,6 +1182,9 @@ subroutine advect_scalar_y(scalar, hprev, vhr, vh_neglect, domore_v, Idt, is, ie
                                                 !! old answers and should eventually be obsoleted.
   logical,                 intent(in)    :: Adcroft_CFL !< If true, use an Adcroft reciprocal of the
                                                 !! cell mass when computing the advective CFL number.
+  type(ice_OBC_type),          pointer       :: OBC   !< This open boundary condition type specifies
+                                                      !! whether, where, and what open boundary
+                                                      !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G)) :: &
@@ -1308,7 +1318,7 @@ end subroutine advect_scalar_y
 !> advect_y does 1-d flux-form advection of multiple tracers in the y-direction
 !! using a monotonic piecewise constant, linear, or parabolic scheme.
 subroutine advect_y(Tr, hprev, vhr, vh_neglect, domore_v, ntr, nL_max, Idt, is, ie, js, je, k, &
-                    G, US, IG, usePPM, usePCM, fixed_mass_neglect, Adcroft_CFL) ! (, OBC)
+                    G, US, IG, usePPM, usePCM, fixed_mass_neglect, Adcroft_CFL, OBC)
   type(SIS_hor_grid_type), intent(inout) :: G   !< The horizontal grid type
   type(ice_grid_type),     intent(in)    :: IG  !< The sea-ice specific grid type
   type(SIS_tracer_type), dimension(ntr), &
@@ -1321,9 +1331,6 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, domore_v, ntr, nL_max, Idt, is, 
                                                 !! meridional faces [R Z L2 ~> kg].
   real, dimension(SZI_(G),SZJB_(G)), &
                            intent(inout) :: vh_neglect !< A value of vhr that can be neglected [R Z L2 ~> kg].
-! type(ocean_OBC_type),    pointer       :: OBC ! < This open boundary condition type specifies
-                                                ! ! whether, where, and what open boundary
-                                                ! ! conditions are used.
   logical, dimension(SZJB_(G),SZCAT_(IG)), &
                            intent(inout) :: domore_v !< True in rows with more advection to be done
   real,                    intent(in)    :: Idt !< The inverse of the time increment [T-1 ~> s-1]
@@ -1344,6 +1351,9 @@ subroutine advect_y(Tr, hprev, vhr, vh_neglect, domore_v, ntr, nL_max, Idt, is, 
                                                 !! old answers and should eventually be obsoleted.
   logical,                 intent(in)    :: Adcroft_CFL !< If true, use an Adcroft reciprocal of the
                                                 !! cell mass when computing the advective CFL number.
+  type(ice_OBC_type),          pointer       :: OBC   !< This open boundary condition type specifies
+                                                      !! whether, where, and what open boundary
+                                                      !! conditions are used.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G),nL_max,ntr) :: &
@@ -1699,7 +1709,7 @@ end subroutine kernel_PPMH3_Tr_y
 
 
 !> Advect tracers laterally within their categories using 2-d upwind advection.
-subroutine advect_upwind_2d(Tr, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG)
+subroutine advect_upwind_2d(Tr, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG, OBC)
   type(SIS_hor_grid_type),     intent(inout) :: G     !< The horizontal grid type
   type(ice_grid_type),         intent(in)    :: IG    !< The sea-ice specific grid type
   type(SIS_tracer_type), dimension(ntr), &
@@ -1719,6 +1729,9 @@ subroutine advect_upwind_2d(Tr, h_prev, h_end, uhtr, vhtr, ntr, dt, G, US, IG)
   real,                        intent(in)    :: dt    !<  Time increment [T ~> s].
   integer,                     intent(in)    :: ntr   !< The number of tracers to advect
   type(unit_scale_type),       intent(in)    :: US    !< A structure with unit conversion factors
+  type(ice_OBC_type),          pointer       :: OBC   !< This open boundary condition type specifies
+                                                      !! whether, where, and what open boundary
+                                                      !! conditions are used.
 
   ! Local variables
   real, dimension(SZIB_(G),SZJ_(G)) :: flux_x  ! x-direction tracer fluxes [Conc R Z L2 ~> Conc kg]

@@ -17,6 +17,7 @@ use SIS_diag_mediator, only : post_SIS_data, query_SIS_averaging_enabled, SIS_di
 use SIS_diag_mediator, only : register_diag_field=>register_SIS_diag_field, time_type
 use SIS_framework,     only : safe_alloc
 use SIS_hor_grid,      only : SIS_hor_grid_type
+use SIS_open_boundary, only : ice_OBC_type
 use SIS_tracer_advect, only : advect_tracers_thicker, SIS_tracer_advect_CS
 use SIS_tracer_advect, only : advect_SIS_tracers, SIS_tracer_advect_init, SIS_tracer_advect_end
 use SIS_tracer_advect, only : advect_scalar
@@ -111,7 +112,7 @@ contains
 
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~!
 !> ice_cat_transport does ice transport of mass and tracers by thickness category
-subroutine ice_cat_transport(CAS, TrReg, dt_slow, nsteps, G, US, IG, CS, uc, vc, mca_tot, uh_tot, vh_tot)
+subroutine ice_cat_transport(CAS, TrReg, dt_slow, nsteps, G, US, IG, CS, OBC, uc, vc, mca_tot, uh_tot, vh_tot)
   type(cell_average_state_type),     intent(inout) :: CAS !< A structure with ocean-cell averaged masses.
   type(SIS_hor_grid_type),           intent(inout) :: G   !< The horizontal grid type
   type(ice_grid_type),               intent(inout) :: IG  !< The sea-ice specific grid type
@@ -122,6 +123,9 @@ subroutine ice_cat_transport(CAS, TrReg, dt_slow, nsteps, G, US, IG, CS, uc, vc,
                                                           !! to use within this time step.
   type(unit_scale_type),             intent(in)    :: US  !< A structure with unit conversion factors
   type(SIS_transport_CS),            pointer       :: CS  !< A pointer to the control structure for this module
+  type(ice_OBC_type),                pointer       :: OBC   !< This open boundary condition type specifies
+                                                            !! whether, where, and what open boundary
+                                                            !! conditions are used.
   real, dimension(SZIB_(G),SZJ_(G)), optional, intent(in)    :: uc  !< The zonal ice velocity [L T-1 ~> m s-1].
   real, dimension(SZI_(G),SZJB_(G)), optional, intent(in)    :: vc  !< The meridional ice velocity [L T-1 ~> m s-1].
   real, dimension(SZI_(G),SZJ_(G),0:max(nsteps,1)), optional, intent(in) :: &
@@ -199,11 +203,11 @@ subroutine ice_cat_transport(CAS, TrReg, dt_slow, nsteps, G, US, IG, CS, uc, vc,
     endif
 
     call advect_scalar(CAS%mH_ice, mca0_ice, CAS%m_ice, uh_ice, vh_ice, &
-                            dt_adv, G, US, IG, CS%SIS_thick_adv_CSp)
+                            dt_adv, G, US, IG, CS%SIS_thick_adv_CSp, OBC)
     call advect_SIS_tracers(mca0_ice, CAS%m_ice, uh_ice, vh_ice, &
-                            dt_adv, G, US, IG, CS%SIS_tr_adv_CSp, TrReg, snow_tr=.false.)
+                            dt_adv, G, US, IG, CS%SIS_tr_adv_CSp, TrReg, .false., OBC)
     call advect_SIS_tracers(mca0_snow, CAS%m_snow, uh_snow, vh_snow, &
-                            dt_adv, G, US, IG, CS%SIS_tr_adv_CSp, TrReg, snow_tr=.true.)
+                            dt_adv, G, US, IG, CS%SIS_tr_adv_CSp, TrReg, .true., OBC)
 
     ! Accumulated diagnostics
     CAS%dt_sum = CAS%dt_sum + dt_adv

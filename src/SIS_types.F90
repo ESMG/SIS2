@@ -99,6 +99,7 @@ type ice_state_type
     rdg_height    ! height of ridged ice per category [Z ~> m]
 
   logical :: Cgrid_dyn !< If true use a C-grid discretization of the sea-ice dynamics.
+  logical :: do_dynamics !< If true compute the sea-ice dynamics.
   logical :: valid_IST !< If true, this is currently the valid state of the ice.  Otherwise the ice
                        !! is in the midst of a dynamics cycle where the evolving state has changes
                        !! that are not yet reflected here.

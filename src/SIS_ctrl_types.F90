@@ -94,6 +94,7 @@ type SIS_slow_CS
   logical :: Cgrid_dyn      !< If true use a C-grid discretization of the
                             !! sea-ice dynamics.
 
+  logical :: do_dynamics    !< If true timestep the sea-ice dynamics.
   logical :: slab_ice       !< If true, use the archaic GFDL slab ice.
   logical :: specified_ice  !< If true, the sea ice is specified and there is
                             !! no need for ice dynamics.
@@ -198,7 +199,6 @@ subroutine ice_diagnostics_init(IOF, OSS, FIA, G, US, IG, diag, Time, Cgrid)
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
   nLay = IG%NkIce
   Cgrid_dyn = .true. ; if (present(Cgrid)) Cgrid_dyn = Cgrid
-
 
   id_sin_rot   = register_static_field('ice_model', 'SINROT', diag%axesT1, &
                  '-SINROT,COSROT points north', 'none')

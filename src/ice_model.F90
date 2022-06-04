@@ -1726,6 +1726,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   logical :: do_ridging
   logical :: specified_ice    ! If true, the ice is specified and there is no dynamics.
   logical :: Cgrid_dyn
+  logical :: do_dynamics
   logical :: new_sim     ! If true, this is a new simulation, based on the contents of dirs and
                          ! the presence or absence of a named restart file.
   logical :: slab_ice    ! If true, use the very old slab ice thermodynamics,
@@ -1801,6 +1802,9 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   call get_param(param_file, mdl, "CGRID_ICE_DYNAMICS", Cgrid_dyn, &
                  "If true, use a C-grid discretization of the sea-ice "//&
                  "dynamics; if false use a B-grid discretization.", &
+                 default=.true.)
+  call get_param(param_file, mdl, "DO_DYNAMICS", do_dynamics, &
+                 "If False, skips the dynamics calls that update u & v.", &
                  default=.true.)
   if (specified_ice) then
     slab_ice = .true.
@@ -2030,6 +2034,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
     ! Set some pointers for convenience.
     sIST => Ice%sCS%IST ; sIG => Ice%sCS%IG
     sIST%Cgrid_dyn = Cgrid_dyn
+    sIST%do_dynamics = do_dynamics
 
     Ice%sCS%do_icebergs = do_icebergs
     Ice%sCS%pass_iceberg_area_to_ocean = pass_iceberg_area_to_ocean
@@ -2037,6 +2042,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
     Ice%sCS%slab_ice = slab_ice
     Ice%sCS%specified_ice = specified_ice
     Ice%sCS%Cgrid_dyn = Cgrid_dyn
+    Ice%sCS%do_dynamics = do_dynamics
     Ice%sCS%redo_fast_update = redo_fast_update
     Ice%sCS%bounds_check = bounds_check
     Ice%sCS%debug = debug_slow
@@ -2190,6 +2196,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
     else
       ! Set up the domains and lateral grids.
       Ice%fCS%IST%Cgrid_dyn = Cgrid_dyn
+      Ice%fCS%IST%do_dynamics = do_dynamics
       if (.not.associated(Ice%fCS%G)) allocate(Ice%fCS%G)
       fG => Ice%fCS%G
 

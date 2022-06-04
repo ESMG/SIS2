@@ -403,8 +403,9 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
       call convert_IST_to_simple_state(IST, CS%DS2d, CS%CAS, G, US, IG, CS)
 
       ! Update the category-merged dynamics and use the merged continuity equation.
-      call SIS_merged_dyn_cont(OSS, FIA, IOF, CS%DS2d, IST, dt_adv_cycle, Time_cycle_start, &
-                               G, US, IG, CS, OBC)
+      if (IST%do_dynamics) &
+        call SIS_merged_dyn_cont(OSS, FIA, IOF, CS%DS2d, IST, dt_adv_cycle, Time_cycle_start, &
+                                 G, US, IG, CS, OBC)
 
       ! Complete the category-resolved mass and tracer transport and update the ice state type.
       call complete_IST_transport(CS%DS2d, CS%CAS, IST, dt_adv_cycle, G, US, IG, CS, OBC)

@@ -9,6 +9,8 @@ use MOM_error_handler, only : SIS_error=>MOM_error, FATAL, WARNING, SIS_mesg=>MO
 use MOM_file_parser,   only : get_param, log_param, read_param, log_version, param_file_type
 use MOM_hor_index,     only : hor_index_type
 use MOM_obsolete_params, only : obsolete_logical, obsolete_real
+use MOM_open_boundary, only : OBC_NONE
+use MOM_open_boundary, only : OBC_DIRECTION_E, OBC_DIRECTION_W, OBC_DIRECTION_N, OBC_DIRECTION_S
 use MOM_unit_scaling,  only : unit_scale_type
 use SIS_continuity,    only : SIS_continuity_init, SIS_continuity_end
 use SIS_continuity,    only : continuity=>ice_continuity, SIS_continuity_CS
@@ -123,9 +125,7 @@ subroutine ice_cat_transport(CAS, TrReg, dt_slow, nsteps, G, US, IG, CS, OBC, uc
                                                           !! to use within this time step.
   type(unit_scale_type),             intent(in)    :: US  !< A structure with unit conversion factors
   type(SIS_transport_CS),            pointer       :: CS  !< A pointer to the control structure for this module
-  type(ice_OBC_type),                pointer       :: OBC   !< This open boundary condition type specifies
-                                                            !! whether, where, and what open boundary
-                                                            !! conditions are used.
+  type(ice_OBC_type),                pointer       :: OBC !< Open boundary structure.
   real, dimension(SZIB_(G),SZJ_(G)), optional, intent(in)    :: uc  !< The zonal ice velocity [L T-1 ~> m s-1].
   real, dimension(SZI_(G),SZJB_(G)), optional, intent(in)    :: vc  !< The meridional ice velocity [L T-1 ~> m s-1].
   real, dimension(SZI_(G),SZJ_(G),0:max(nsteps,1)), optional, intent(in) :: &

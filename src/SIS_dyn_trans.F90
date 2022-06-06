@@ -748,9 +748,7 @@ subroutine complete_IST_transport(DS2d, CAS, IST, dt_adv_cycle, G, US, IG, CS, O
   type(unit_scale_type),         intent(in)    :: US  !< A structure with unit conversion factors
   type(ice_grid_type),           intent(inout) :: IG  !< The sea-ice specific grid type
   type(dyn_trans_CS),            pointer       :: CS  !< The control structure for the SIS_dyn_trans module
-  type(ice_OBC_type),            pointer       :: OBC !< This open boundary condition type specifies
-                                                      !! whether, where, and what open boundary
-                                                      !! conditions are used.
+  type(ice_OBC_type),            pointer       :: OBC !< Open boundary structure.
 
   integer :: i, j, k, isc, iec, jsc, jec
   integer :: isd, ied, jsd, jed, IsdB, IedB, JsdB, JedB

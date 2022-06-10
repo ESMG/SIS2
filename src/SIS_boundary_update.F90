@@ -13,7 +13,7 @@ use MOM_dyn_horgrid,          only : dyn_horgrid_type
 use MOM_unit_scaling,         only : unit_scale_type
 use SIS_open_boundary,        only : ice_OBC_registry_type, file_ice_OBC_CS
 use SIS_open_boundary,        only : register_file_ice_OBC, file_ice_OBC_end
-use SIS_open_boundary,        only : ice_OBC_type, update_ice_OBC_segment_data
+use SIS_open_boundary,        only : ice_OBC_type, update_ice_segment_data
 use SIS_tracer_registry,      only : SIS_tracer_registry_type
 
 implicit none ; private
@@ -89,7 +89,7 @@ subroutine update_ice_OBC_data(OBC, G, IG, US, CS, Time)
 ! Something here... with CS%file_ice_OBC_CSp?
 ! if (CS%use_files) &
 !     call update_ice_OBC_segment_data(G, GV, OBC, tv, h, Time)
-  if (OBC%needs_IO_for_data) call update_ice_OBC_segment_data(G, IG, US, OBC, Time)
+  if (OBC%needs_IO_for_data) call update_ice_segment_data(G, IG, US, OBC, Time)
 
 end subroutine update_ice_OBC_data
 

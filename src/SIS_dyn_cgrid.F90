@@ -1174,22 +1174,22 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                                    G%dxCv(i,J-1)*vi(i,J-1)))
     enddo ; enddo
 
-   if (CS%project_ci) then
+    if (CS%project_ci) then
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,ci_proj,ci,dt_cumulative, &
 !$OMP                                  sh_Dd,pres_mice,CS)
-     do j=jsc-1,jec+1 ; do i=isc-1,iec+1
-       ! Estimate future ice concentrations from the approximate expression
-       !   d ci / dt = - ci * sh_Dt
-       ! The choice to base this on the final velocity, the initial concentration
-       ! and the elapsed time is because it is that final velocity that will drive
-       ! ice convergence.
-       ci_proj(i,j) = ci(i,j) * exp(-dt_cumulative*sh_Dd(i,j))
-       ! Recompute pres_mice.
-       pres_mice(i,j) = CS%p0_rho*exp(-CS%c0*max(1.0-ci_proj(i,j),0.0))
-     enddo ; enddo
-   endif
+      do j=jsc-1,jec+1 ; do i=isc-1,iec+1
+        ! Estimate future ice concentrations from the approximate expression
+        !   d ci / dt = - ci * sh_Dt
+        ! The choice to base this on the final velocity, the initial concentration
+        ! and the elapsed time is because it is that final velocity that will drive
+        ! ice convergence.
+        ci_proj(i,j) = ci(i,j) * exp(-dt_cumulative*sh_Dd(i,j))
+        ! Recompute pres_mice.
+        pres_mice(i,j) = CS%p0_rho*exp(-CS%c0*max(1.0-ci_proj(i,j),0.0))
+      enddo ; enddo
+    endif
 
-   ! calculate viscosities - how often should we do this ?
+    ! calculate viscosities - how often should we do this ?
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,del_sh,zeta,sh_Dd,sh_Dt, &
 !$OMP                                  I_EC2,sh_Ds,pres_mice,mice,del_sh_min_pr)
     do j=jsc-1,jec+1 ; do i=isc-1,iec+1
@@ -1260,7 +1260,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
 
       Cor = ((azon(I,j) * vi(i+1,J) + czon(I,j) * vi(i,J-1)) + &
              (bzon(I,j) * vi(i,J) + dzon(I,j) * vi(i+1,J-1))) ! - Cor_ref_u(I,j)
-      !  Evaluate 1/m x.Div(m strain).  This expressions include all metric terms
+      !  Evaluate 1/m x.Div(m strain).  This expression includes all metric terms
       !  for an orthogonal grid.  The str_d term integrates out to no curl, while
       !  str_s & str_t terms impose no divergence and do not act on solid body rotation.
       fxic_now = G%IdxCu(I,j) * (CS%str_d(i+1,j) - CS%str_d(i,j)) + &
@@ -1351,7 +1351,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     do J=jsc-1,jec ; do i=isc,iec
       Cor = -1.0*((amer(I-1,j) * u_tmp(I-1,j) + cmer(I,j+1) * u_tmp(I,j+1)) + &
                   (bmer(I,j) * u_tmp(I,j) + dmer(I-1,j+1) * u_tmp(I-1,j+1)))
-      !  Evaluate 1/m y.Div(m strain).  This expressions include all metric terms
+      !  Evaluate 1/m y.Div(m strain).  This expression includes all metric terms
       !  for an orthogonal grid.  The str_d term integrates out to no curl, while
       !  str_s & str_t terms impose no divergence and do not act on solid body rotation.
       fyic_now = G%IdyCv(i,J) * (CS%str_d(i,j+1)-CS%str_d(i,j)) + &

@@ -422,8 +422,9 @@ subroutine summed_continuity(u, v, h_in, h, uh, vh, dt, G, US, IG, CS, h_ice)
   real    :: h_up
   integer :: is, ie, js, je, stencil
   integer :: i, j
-
+  character(len=256) :: mesg
   logical :: x_first
+
   is = G%isc ; ie = G%iec ; js = G%jsc ; je = G%jec
 
   if (.not.associated(CS)) call SIS_error(FATAL, &
@@ -433,10 +434,15 @@ subroutine summed_continuity(u, v, h_in, h, uh, vh, dt, G, US, IG, CS, h_ice)
   stencil = 3 ; if (CS%simple_2nd) stencil = 2 ; if (CS%upwind_1st) stencil = 1
 
   do j=js,je ; do i=is,ie ; if (h_in(i,j) < 0.0) then
+    write(mesg,'("Negative ice mass at: ", 2i6, 1pe12.4)') i+G%idg_offset, j+G%jdg_offset, h_in(i,j)
+    call SIS_error(WARNING, mesg, all_print=.true.)
     call SIS_error(FATAL, 'Negative mass input to summed_continuity().')
   endif ; enddo ; enddo
 
   if (present(h_ice)) then ; do j=js,je ; do i=is,ie ; if (h_ice(i,j) > h_in(i,j)) then
+    write(mesg,'("ice mass exceeds total mass at: ", 2i6, 1pe12.4, 1pe12.4)') i+G%idg_offset, &
+                 j+G%jdg_offset, h_ice(i,j), h_in(i,j)
+    call SIS_error(WARNING, mesg, all_print=.true.)
     call SIS_error(FATAL, 'ice mass exceeds total mass in summed_continuity().')
   endif ; enddo ; enddo ; endif
 

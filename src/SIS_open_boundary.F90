@@ -9,7 +9,7 @@ use MOM_domains,              only : pass_var, pass_vector
 use MOM_domains,              only : To_All, EAST_FACE, NORTH_FACE, SCALAR_PAIR, CGRID_NE, CORNER
 use MOM_error_handler,        only : MOM_mesg, MOM_error, FATAL, WARNING, is_root_pe
 use MOM_file_parser,          only : get_param, log_version, param_file_type, log_param
-use MOM_grid,                 only : ocean_grid_type, hor_index_type
+use MOM_grid,                 only : hor_index_type
 use MOM_dyn_horgrid,          only : dyn_horgrid_type
 use MOM_interpolate,          only : init_external_field, time_interp_external, time_interp_external_init
 use MOM_io,                   only : slasher, field_size, SINGLE_FILE
@@ -23,6 +23,7 @@ use MOM_time_manager,         only : set_date, time_type, time_type_to_real, ope
 use MOM_array_transform,      only : rotate_array, rotate_array_pair
 use MOM_array_transform,      only : allocate_rotated_array
 use MOM_unit_scaling,         only : unit_scale_type
+use SIS_hor_grid,             only : SIS_hor_grid_type
 
 implicit none ; private
 
@@ -30,7 +31,7 @@ implicit none ; private
 
 public file_ice_OBC_end
 public ice_open_boundary_config
-!public ice_open_boundary_init
+public ice_open_boundary_init
 public ice_OBC_impose_land_mask
 public register_file_ice_OBC
 public update_ice_segment_data
@@ -41,7 +42,6 @@ integer, parameter         :: MAX_OBC_FIELDS = 100  !< Maximum number of data fi
 !> Open boundary segment data from files (mostly).
 type, public :: ice_OBC_segment_data_type
   integer :: fid                            !< handle from FMS associated with segment data on disk
-  integer :: fid_dz                         !< handle from FMS associated with segment thicknesses on disk
   character(len=8)                :: name   !< a name identifier for the segment data
   real, allocatable :: buffer_src(:,:)      !< buffer for segment data located at cell faces
                                             !! and on the original vertical grid
@@ -50,7 +50,7 @@ type, public :: ice_OBC_segment_data_type
 ! real, allocatable :: dz_src(:,:,:,:)      !< vertical grid cell spacing of the incoming segment
 !                                           !! data, set in [Z ~> m]
 !                                           !then scaled to [H ~> m or !kg m-2]
-  real, allocatable :: buffer_dst(:,:)      !< buffer src data remapped to the target vertical grid
+! real, allocatable :: buffer_dst(:,:)      !< buffer src data remapped to the target vertical grid
   real              :: value                !< constant value if fid is equal to -1
 end type ice_OBC_segment_data_type
 
@@ -133,6 +133,8 @@ type, public :: ice_OBC_segment_type
                                                !! to the OB segment [T-1 ~> s-1].
   real, allocatable :: nudged_tangential_grad(:,:) !< The gradient of the velocity tangential
                                                !! to the OB segment [T-1 ~> s-1].
+  real, allocatable :: str_s(:,:)              !< The shearing stress tensor component
+                                               !! [R Z L2 T-2 ~> Pa m].
 ! real, allocatable :: normal_trans(:,:)    !< The layer transport normal to the OB
 !                                           !! segment [H L2 T-1 ~> m3 s-1].
   type(segment_ice_tracer_registry_type), pointer  :: tr_Reg=> NULL()!< A pointer to the tracer registry for the segment.
@@ -165,6 +167,8 @@ type, public :: ice_OBC_type
   logical :: specified_u_BCs_exist_globally = .false. !< True if any zonal velocity points
                                                       !! in the global domain use specified BCs.
   logical :: specified_v_BCs_exist_globally = .false. !< True if any meridional velocity points
+                                                      !! in the global domain use specified BCs.
+  logical :: specified_sigma_BCs_exist_globally = .false. !< True if any str_s points
                                                       !! in the global domain use specified BCs.
   logical :: radiation_BCs_exist_globally = .false.   !< True if radiations BCs are in use anywhere.
   logical :: user_BCs_set_globally = .false.          !< True if any OBC_USER_CONFIG is set
@@ -413,7 +417,8 @@ subroutine ice_open_boundary_config(G, US, param_file, OBC)
     ! Moved this earlier because time_interp_external_init needs to be called
     ! before anything that uses time_interp_external (such as initialize_segment_data)
     if (OBC%specified_u_BCs_exist_globally .or.  OBC%specified_v_BCs_exist_globally .or. &
-      OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally) then
+      OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally .or. &
+      OBC%specified_sigma_BCs_exist_globally) then
       ! Need this for boundary interpolation.
       call time_interp_external_init()
     endif
@@ -457,19 +462,110 @@ subroutine ice_open_boundary_config(G, US, param_file, OBC)
        "Symmetric memory must be used when using Flather OBCs.")
 
   if (.not.(OBC%specified_u_BCs_exist_globally .or. OBC%specified_v_BCs_exist_globally .or. &
-            OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally)) then
+            OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally .or. &
+            OBC%specified_sigma_BCs_exist_globally)) then
     ! No open boundaries have been requested
     call ice_open_boundary_dealloc(OBC)
   endif
 
 end subroutine ice_open_boundary_config
 
+!> Initialize open boundary control structure and do any necessary rescaling of OBC
+!! fields that have been read from a restart file.
+subroutine ice_open_boundary_init(G, IG, US, param_file, OBC, is_restart)
+  type(SIS_hor_grid_type), intent(in)    :: G    !< Ocean grid structure
+  type(ice_grid_type),     intent(in)    :: IG   !< Ice vertical grid structure
+  type(unit_scale_type),   intent(in)    :: US  !< A dimensional unit scaling type
+  type(param_file_type),   intent(in)    :: param_file !< Parameter file handle
+  type(ice_OBC_type),      pointer       :: OBC !< Open boundary control structure
+! type(SIS_restart_CS),    intent(in)    :: restart_CS !< Restart structure, data intent(inout)
+  logical,                 intent(in)    :: is_restart !< True if restart run
+
+  ! Local variables
+  real :: vel2_rescale ! A rescaling factor for squared velocities from the representation in
+                       ! a restart file to the internal representation in this run.
+  integer :: i, j, k, isd, ied, jsd, jed, nz, m
+  integer :: IsdB, IedB, JsdB, JedB
+  isd  = G%isd  ; ied  = G%ied  ; jsd  = G%jsd  ; jed  = G%jed
+  IsdB = G%IsdB ; IedB = G%IedB ; JsdB = G%JsdB ; JedB = G%JedB
+
+  if (.not.associated(OBC)) return
+
+! Placeholder for restart stuffs
+!  id_clock_pass = cpu_clock_id('(Ocean OBC halo updates)', grain=CLOCK_ROUTINE)
+!  if (OBC%radiation_BCs_exist_globally) call pass_vector(OBC%rx_normal, OBC%ry_normal, G%Domain, &
+!                     To_All+Scalar_Pair)
+!  if (OBC%oblique_BCs_exist_globally) call pass_vector(OBC%rx_oblique, OBC%ry_oblique, G%Domain, &
+!                     To_All+Scalar_Pair)
+!  if (allocated(OBC%cff_normal)) call pass_var(OBC%cff_normal, G%Domain, position=CORNER)
+!  if (allocated(OBC%tres_x) .and. allocated(OBC%tres_y)) then
+!    do m=1,OBC%ntr
+!      call pass_vector(OBC%tres_x(:,:,:,m), OBC%tres_y(:,:,:,m), G%Domain, To_All+Scalar_Pair)
+!    enddo
+!  elseif (allocated(OBC%tres_x)) then
+!    do m=1,OBC%ntr
+!      call pass_var(OBC%tres_x(:,:,:,m), G%Domain, position=EAST_FACE)
+!    enddo
+!  elseif (allocated(OBC%tres_y)) then
+!    do m=1,OBC%ntr
+!      call pass_var(OBC%tres_y(:,:,:,m), G%Domain, position=NORTH_FACE)
+!    enddo
+!  endif
+!
+!  ! The rx_normal and ry_normal arrays used with radiation OBCs are currently in
+!  ! units of grid
+!  ! points per timestep, but if this were to be corrected to [L T-1 ~> m s-1] or
+!  ! [T-1 ~> s-1] to
+!  ! permit timesteps to change between calls to the OBC code, the following
+!  ! would be needed:
+!!  if ( OBC%radiation_BCs_exist_globally .and. (US%s_to_T_restart *
+!!  US%m_to_L_restart /= 0.0) .and. &
+!!       (US%s_to_T_restart /= US%m_to_L_restart) ) then
+!!    vel_rescale = US%s_to_T_restart /  US%m_to_L_restart
+!!    if (query_initialized(OBC%rx_normal, "rx_normal", restart_CS)) then
+!!      do k=1,nz ; do j=jsd,jed ; do I=IsdB,IedB
+!!        OBC%rx_normal(I,j,k) = vel_rescale * OBC%rx_normal(I,j,k)
+!!      enddo ; enddo ; enddo
+!!    endif
+!!    if (query_initialized(OBC%ry_normal, "ry_normal", restart_CS)) then
+!!      do k=1,nz ; do J=JsdB,JedB ; do i=isd,ied
+!!        OBC%ry_normal(i,J,k) = vel_rescale * OBC%ry_normal(i,J,k)
+!!      enddo ; enddo ; enddo
+!!    endif
+!!  endif
+!
+!  ! The oblique boundary condition terms have units of [L2 T-2 ~> m2 s-2] and
+!  ! may need to be rescaled.
+!  if ( OBC%oblique_BCs_exist_globally .and. (US%s_to_T_restart * US%m_to_L_restart /= 0.0) .and. &
+!       (US%s_to_T_restart /= US%m_to_L_restart) ) then
+!    vel2_rescale = US%s_to_T_restart**2 /  US%m_to_L_restart**2
+!    if (query_initialized(OBC%rx_oblique, "rx_oblique", restart_CS)) then
+!      do k=1,nz ; do j=jsd,jed ; do I=IsdB,IedB
+!        OBC%rx_oblique(I,j,k) = vel2_rescale * OBC%rx_oblique(I,j,k)
+!      enddo ; enddo ; enddo
+!    endif
+!    if (query_initialized(OBC%ry_oblique, "ry_oblique", restart_CS)) then
+!      do k=1,nz ; do J=JsdB,JedB ; do i=isd,ied
+!        OBC%ry_oblique(i,J,k) = vel2_rescale * OBC%ry_oblique(i,J,k)
+!      enddo ; enddo ; enddo
+!    endif
+!    if (query_initialized(OBC%cff_normal, "cff_normal", restart_CS)) then
+!      do k=1,nz ; do J=JsdB,JedB ; do I=IsdB,IedB
+!        OBC%cff_normal(I,J,k) = vel2_rescale * OBC%cff_normal(I,J,k)
+!      enddo ; enddo ; enddo
+!    endif
+!  endif
+
+end subroutine ice_open_boundary_init
+
 !> Allocate space for reading OBC data from files. It sets up the required vertical
 !! remapping. In the process, it does funky stuff with the MPI processes.
-subroutine initialize_ice_segment_data(G, OBC, PF)
-  type(ocean_grid_type), intent(in) :: G    !< Ocean grid structure
-  type(ice_OBC_type), target, intent(inout) :: OBC !< Open boundary control structure
-  type(param_file_type), intent(in) :: PF   !< Parameter file handle
+subroutine initialize_ice_segment_data(G, IG, US, OBC, PF)
+  type(SIS_hor_grid_type),       intent(in)    :: G    !< Ocean grid structure
+  type(ice_grid_type),           intent(in)    :: IG   !< Ice vertical grid structure
+  type(unit_scale_type),         intent(in)    :: US   !< A dimensional unit scaling type
+  type(ice_OBC_type), target, intent(inout)    :: OBC !< Open boundary control structure
+  type(param_file_type),         intent(in)    :: PF   !< Parameter file handle
 
   integer :: n, m, num_fields
   character(len=1024) :: segstr
@@ -689,8 +785,8 @@ subroutine initialize_ice_segment_data(G, OBC, PF)
       endif
     enddo
     if (segment%u_values_needed .or. segment%v_values_needed .or. &
-        segment%g_values_needed .or. segment%str_d_values_needed .or. &
-        segment%str_t_values_needed .or. segment%str_s_values_needed .or. &
+        segment%g_values_needed .or. segment%str_s_values_needed .or. &
+!       segment%str_t_values_needed .or. segment%str_d_values_needed .or. &
         segment%hi_values_needed .or. segment%ci_values_needed) then
       write(mesg,'("Values needed for OBC segment ",I3)') n
       call MOM_error(FATAL, mesg)
@@ -895,7 +991,7 @@ subroutine setup_u_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_y)
       OBC%segment(l_seg)%open = .true.
       OBC%Flather_u_BCs_exist_globally = .true.
       OBC%open_u_BCs_exist_globally = .true.
-      OBC%segment(l_seg)%u_values_needed = .true.
+!     OBC%segment(l_seg)%u_values_needed = .true.
     elseif (trim(action_str(a_loop)) == 'ORLANSKI') then
       OBC%segment(l_seg)%radiation = .true.
       OBC%segment(l_seg)%open = .true.
@@ -935,6 +1031,7 @@ subroutine setup_u_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_y)
       OBC%segment(l_seg)%str_d_values_needed = .true.
       OBC%segment(l_seg)%str_t_values_needed = .true.
       OBC%segment(l_seg)%str_s_values_needed = .true.
+      OBC%specified_sigma_BCs_exist_globally = .true. ! This avoids deallocation
     elseif (trim(action_str(a_loop)) == 'SIMPLE_GRAD') then
       OBC%segment(l_seg)%specified_grad = .true.
       OBC%segment(l_seg)%g_values_needed = .true.
@@ -974,7 +1071,7 @@ subroutine setup_u_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_y)
   OBC%segment(l_seg)%Ie_obc = I_obc
   OBC%segment(l_seg)%Js_obc = Js_obc
   OBC%segment(l_seg)%Je_obc = Je_obc
-! call allocate_ice_OBC_segment_data(OBC, OBC%segment(l_seg))
+  call allocate_ice_OBC_segment_data(OBC, OBC%segment(l_seg))
 
   if (OBC%segment(l_seg)%u_values_needed .or. OBC%segment(l_seg)%v_values_needed .or. &
       OBC%segment(l_seg)%g_values_needed .or. OBC%segment(l_seg)%hi_values_needed .or. &
@@ -1027,7 +1124,7 @@ subroutine setup_v_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_x)
       OBC%segment(l_seg)%open = .true.
       OBC%Flather_v_BCs_exist_globally = .true.
       OBC%open_v_BCs_exist_globally = .true.
-      OBC%segment(l_seg)%v_values_needed = .true.
+!     OBC%segment(l_seg)%v_values_needed = .true.
     elseif (trim(action_str(a_loop)) == 'ORLANSKI') then
       OBC%segment(l_seg)%radiation = .true.
       OBC%segment(l_seg)%open = .true.
@@ -1067,6 +1164,7 @@ subroutine setup_v_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_x)
       OBC%segment(l_seg)%str_d_values_needed = .true.
       OBC%segment(l_seg)%str_t_values_needed = .true.
       OBC%segment(l_seg)%str_s_values_needed = .true.
+      OBC%specified_sigma_BCs_exist_globally = .true. ! This avoids deallocation
     elseif (trim(action_str(a_loop)) == 'SIMPLE_GRAD') then
       OBC%segment(l_seg)%specified_grad = .true.
       OBC%segment(l_seg)%g_values_needed = .true.
@@ -1104,7 +1202,7 @@ subroutine setup_v_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_x)
   OBC%segment(l_seg)%Ie_obc = Ie_obc
   OBC%segment(l_seg)%Js_obc = J_obc
   OBC%segment(l_seg)%Je_obc = J_obc
-! call allocate_ice_OBC_segment_data(OBC, OBC%segment(l_seg))
+  call allocate_ice_OBC_segment_data(OBC, OBC%segment(l_seg))
 
   if (OBC%segment(l_seg)%u_values_needed .or. OBC%segment(l_seg)%v_values_needed .or. &
       OBC%segment(l_seg)%g_values_needed .or. OBC%segment(l_seg)%hi_values_needed .or. &
@@ -1368,7 +1466,7 @@ subroutine ice_open_boundary_dealloc(OBC)
 
   do n=1, OBC%number_of_segments
     segment => OBC%segment(n)
-!   call deallocate_ice_OBC_segment_data(segment)
+    call deallocate_ice_OBC_segment_data(segment)
   enddo
   if (allocated(OBC%segment)) deallocate(OBC%segment)
   if (allocated(OBC%segnum_u)) deallocate(OBC%segnum_u)
@@ -1380,7 +1478,7 @@ end subroutine ice_open_boundary_dealloc
 
 !> Update the OBC values on the segments.
 subroutine update_ice_segment_data(G, IG, US, OBC, Time)
-  type(ocean_grid_type),                     intent(in)    :: G    !< Ocean grid structure
+  type(SIS_hor_grid_type),                   intent(in)    :: G    !< Ocean grid structure
   type(ice_grid_type),                       intent(in)    :: IG   !< Ice vertical grid structure
   type(unit_scale_type),                     intent(in)    :: US   !< A dimensional unit scaling type
   type(ice_OBC_type),                        pointer       :: OBC  !< Open boundary structure
@@ -1393,6 +1491,7 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
   integer, dimension(4) :: siz
   real, dimension(:,:), pointer :: tmp_buffer_in => NULL()  ! Unrotated input [various units]
   integer :: ni_seg, nj_seg  ! number of src gridpoints along the segments
+  integer :: ni_seg2, nj_seg2  ! number of src gridpoints along the segments
   integer :: ni_buf, nj_buf  ! Number of filled values in tmp_buffer
   integer :: is_obc, ie_obc, js_obc, je_obc  ! segment indices within local domain
   integer :: ishift, jshift  ! offsets for staggered locations
@@ -1412,10 +1511,6 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
   turns = G%HI%turns
 
   if (.not. associated(OBC)) return
-
-!  if (OBC%add_tide_constituents) time_delta = US%s_to_T * time_type_to_real(Time - OBC%time_ref)
-!    h_neglect = GV%kg_m2_to_H * 1.0e-30 ; h_neglect_edge = GV%kg_m2_to_H * 1.0e-10
-!  endif
 
   do n = 1, OBC%number_of_segments
     segment => OBC%segment(n)
@@ -1472,24 +1567,24 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
         siz(1)=size(segment%field(m)%buffer_src,1)
         siz(2)=size(segment%field(m)%buffer_src,2)
 !       siz(3)=size(segment%field(m)%buffer_src,3)
-        if (.not.allocated(segment%field(m)%buffer_dst)) then
-          if (segment%is_E_or_W) then
-            if (segment%field(m)%name == 'VI' .or. segment%field(m)%name == 'DVDX' .or. &
-                segment%field(m)%name == 'STR_S') then
-              allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc:je_obc))
-            else
-              allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc+1:je_obc))
-            endif
-          else
-            if (segment%field(m)%name == 'UI' .or. segment%field(m)%name == 'DUDY' .or. &
-                segment%field(m)%name == 'STR_S') then
-              allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc:je_obc))
-            else
-              allocate(segment%field(m)%buffer_dst(is_obc+1:ie_obc,js_obc:je_obc))
-            endif
-          endif
-          segment%field(m)%buffer_dst(:,:) = 0.0
-        endif
+!       if (.not.allocated(segment%field(m)%buffer_dst)) then
+!         if (segment%is_E_or_W) then
+!           if (segment%field(m)%name == 'VI' .or. segment%field(m)%name == 'DVDX' .or. &
+!               segment%field(m)%name == 'STR_S') then
+!             allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc:je_obc))
+!           else
+!             allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc+1:je_obc))
+!           endif
+!         else
+!           if (segment%field(m)%name == 'UI' .or. segment%field(m)%name == 'DUDY' .or. &
+!               segment%field(m)%name == 'STR_S') then
+!             allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc:je_obc))
+!           else
+!             allocate(segment%field(m)%buffer_dst(is_obc+1:ie_obc,js_obc:je_obc))
+!           endif
+!         endif
+!         segment%field(m)%buffer_dst(:,:) = 0.0
+!       endif
         ! read source data interpolated to the current model time
         ! NOTE: buffer is sized for vertex points, but may be used for faces
         if (siz(1)==1) then
@@ -1546,6 +1641,8 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
           endif
         endif
 
+        ! Ocean code has writing to buffer_src here, then remapping vertically
+        ! into buffer_dst.
         if (OBC%brushcutter_mode) then
           if (segment%is_E_or_W) then
             if (segment%field(m)%name == 'VI' .or. segment%field(m)%name == 'DVDX' .or. &
@@ -1587,47 +1684,27 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
             endif
           endif
         endif
-        if (segment%field(m)%nk_i_src > 1) then
-          call time_interp_external(segment%field(m)%fid_dz, Time, tmp_buffer_in)
-          tmp_buffer_in(:,:) = tmp_buffer_in(:,:) * US%m_to_Z
-          if (turns /= 0) then
-            ! TODO: This is hardcoded for 90 degrees, and needs to be
-            ! generalized.
-            if (segment%is_E_or_W &
-                .and. .not. (segment%field(m)%name == 'VI' .or.  segment%field(m)%name == 'DVDX')) then
-              nj_buf = size(tmp_buffer, 2) - 1
-              call rotate_array(tmp_buffer_in(:nj_buf,:), turns, tmp_buffer(:,:nj_buf))
-            elseif (segment%is_N_or_S &
-                .and. .not. (segment%field(m)%name == 'UI' .or.  segment%field(m)%name == 'DUDY')) then
-              ni_buf = size(tmp_buffer, 1) - 1
-              call rotate_array(tmp_buffer_in(:,:ni_buf), turns, tmp_buffer(:ni_buf,:))
-            else
-              call rotate_array(tmp_buffer_in, turns, tmp_buffer)
-            endif
-          endif
-          segment%field(m)%buffer_dst(:,:) = segment%field(m)%buffer_src(:,:)  ! initialize remap destination buffer
-        endif
         deallocate(tmp_buffer)
         if (turns /= 0) &
           deallocate(tmp_buffer_in)
       else ! fid <= 0 (Uniform value)
-        if (.not. allocated(segment%field(m)%buffer_dst)) then
+        if (.not. allocated(segment%field(m)%buffer_src)) then
           if (segment%is_E_or_W) then
             if (segment%field(m)%name == 'VI' .or. segment%field(m)%name == 'DVDX' .or. &
                 segment%field(m)%name == 'STR_s') then
-              allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc:je_obc))
+              allocate(segment%field(m)%buffer_src(is_obc:ie_obc,js_obc:je_obc))
             else
-              allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc+1:je_obc))
+              allocate(segment%field(m)%buffer_src(is_obc:ie_obc,js_obc+1:je_obc))
             endif
           else
             if (segment%field(m)%name == 'UI' .or. segment%field(m)%name == 'DUDY' .or. &
                 segment%field(m)%name == 'STR_s') then
-              allocate(segment%field(m)%buffer_dst(is_obc:ie_obc,js_obc:je_obc))
+              allocate(segment%field(m)%buffer_src(is_obc:ie_obc,js_obc:je_obc))
             else
-              allocate(segment%field(m)%buffer_dst(is_obc+1:ie_obc,js_obc:je_obc))
+              allocate(segment%field(m)%buffer_src(is_obc+1:ie_obc,js_obc:je_obc))
             endif
           endif
-          segment%field(m)%buffer_dst(:,:) = segment%field(m)%value
+          segment%field(m)%buffer_src(:,:) = segment%field(m)%value
         endif
       endif
     enddo
@@ -1640,20 +1717,20 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
         if (trim(segment%field(m)%name) == 'UI' .and. segment%is_E_or_W) then
           I=is_obc
           do j=js_obc+1,je_obc
-            segment%normal_vel(I,j) = US%m_s_to_L_T * segment%field(m)%buffer_dst(I,j)
+            segment%normal_vel(I,j) = US%m_s_to_L_T * segment%field(m)%buffer_src(I,j)
             if (allocated(segment%nudged_normal_vel)) segment%nudged_normal_vel(I,j) = segment%normal_vel(I,j)
           enddo
         elseif (trim(segment%field(m)%name) == 'VI' .and. segment%is_N_or_S) then
           J=js_obc
           do i=is_obc+1,ie_obc
-            segment%normal_vel(i,J) = US%m_s_to_L_T * segment%field(m)%buffer_dst(i,J)
+            segment%normal_vel(i,J) = US%m_s_to_L_T * segment%field(m)%buffer_src(i,J)
             if (allocated(segment%nudged_normal_vel)) segment%nudged_normal_vel(i,J) = segment%normal_vel(i,J)
           enddo
         elseif (trim(segment%field(m)%name) == 'VI' .and. segment%is_E_or_W .and.  &
                 allocated(segment%tangential_vel)) then
           I=is_obc
           do J=js_obc,je_obc
-            segment%tangential_vel(I,J) = US%m_s_to_L_T * segment%field(m)%buffer_dst(I,J)
+            segment%tangential_vel(I,J) = US%m_s_to_L_T * segment%field(m)%buffer_src(I,J)
             if (allocated(segment%nudged_tangential_vel)) &
               segment%nudged_tangential_vel(I,J) = segment%tangential_vel(I,J)
           enddo
@@ -1661,7 +1738,7 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
                 allocated(segment%tangential_vel)) then
           J=js_obc
           do I=is_obc,ie_obc
-            segment%tangential_vel(I,J) = US%m_s_to_L_T * segment%field(m)%buffer_dst(I,J)
+            segment%tangential_vel(I,J) = US%m_s_to_L_T * segment%field(m)%buffer_src(I,J)
             if (allocated(segment%nudged_tangential_vel)) &
               segment%nudged_tangential_vel(I,J) = segment%tangential_vel(I,J)
           enddo
@@ -1670,7 +1747,7 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
               allocated(segment%tangential_grad)) then
         I=is_obc
         do J=js_obc,je_obc
-          segment%tangential_grad(I,J) = US%T_to_s*segment%field(m)%buffer_dst(I,J)
+          segment%tangential_grad(I,J) = US%T_to_s*segment%field(m)%buffer_src(I,J)
           if (allocated(segment%nudged_tangential_grad)) &
               segment%nudged_tangential_grad(I,J) = segment%tangential_grad(I,J)
         enddo
@@ -1678,9 +1755,17 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
               allocated(segment%tangential_grad)) then
         J=js_obc
         do I=is_obc,ie_obc
-          segment%tangential_grad(I,J) = US%T_to_s*segment%field(m)%buffer_dst(I,J)
+          segment%tangential_grad(I,J) = US%T_to_s*segment%field(m)%buffer_src(I,J)
           if (allocated(segment%nudged_tangential_grad)) &
               segment%nudged_tangential_grad(I,J) = segment%tangential_grad(I,J)
+        enddo
+      elseif (trim(segment%field(m)%name) == 'STR_S' .and. allocated(segment%str_s)) then
+        do J=js_obc,je_obc
+          do I=is_obc,ie_obc
+            segment%str_s(I,J) = US%T_to_s*segment%field(m)%buffer_src(I,J)
+!           if (allocated(segment%nudged_str_s)) &
+!               segment%nudged_str_s(I,J) = segment%str_s(I,J)
+          enddo
         enddo
       endif
 
@@ -1741,6 +1826,85 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
   enddo ! end segment loop
 
 end subroutine update_ice_segment_data
+
+!> Allocate segment data fields
+subroutine allocate_ice_OBC_segment_data(OBC, segment)
+  type(ice_OBC_type),   intent(in)    :: OBC     !< Open boundary structure
+  type(ice_OBC_segment_type), intent(inout) :: segment !< Open boundary segment
+  ! Local variables
+  integer :: isd, ied, jsd, jed
+  integer :: IsdB, IedB, JsdB, JedB
+  integer :: IscB, IecB, JscB, JecB
+
+  isd = segment%HI%isd ; ied = segment%HI%ied
+  jsd = segment%HI%jsd ; jed = segment%HI%jed
+  IsdB = segment%HI%IsdB ; IedB = segment%HI%IedB
+  JsdB = segment%HI%JsdB ; JedB = segment%HI%JedB
+  IscB = segment%HI%IscB ; IecB = segment%HI%IecB
+  JscB = segment%HI%JscB ; JecB = segment%HI%JecB
+
+  if (.not. segment%on_pe) return
+
+  if (segment%is_E_or_W) then
+    ! If these are just Flather, change update_OBC_segment_data accordingly
+    allocate(segment%Cg(IsdB:IedB,jsd:jed), source=0.0)
+    allocate(segment%normal_vel(IsdB:IedB,jsd:jed), source=0.0)
+    if (segment%nudged) &
+      allocate(segment%nudged_normal_vel(IsdB:IedB,jsd:jed), source=0.0)
+!   if (segment%radiation_tan .or. segment%nudged_tan .or. segment%specified_tan .or. &
+!       segment%oblique_tan .or. OBC%computed_vorticity .or. OBC%computed_strain) &
+!     allocate(segment%tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (segment%nudged_tan) &
+      allocate(segment%nudged_tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (segment%nudged_grad) &
+      allocate(segment%nudged_tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
+!   if (OBC%specified_vorticity .or. OBC%specified_strain .or. segment%radiation_grad .or. &
+!             segment%oblique_grad .or. segment%specified_grad) &
+!     allocate(segment%tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (segment%specified_sigma) &
+      allocate(segment%str_s(IsdB:IedB,JsdB:JedB), source=0.0)
+  endif
+
+  if (segment%is_N_or_S) then
+    ! If these are just Flather, change update_OBC_segment_data accordingly
+    allocate(segment%Cg(isd:ied,JsdB:JedB), source=0.0)
+    allocate(segment%normal_vel(isd:ied,JsdB:JedB), source=0.0)
+    if (segment%nudged) &
+      allocate(segment%nudged_normal_vel(isd:ied,JsdB:JedB), source=0.0)
+!   if (segment%radiation_tan .or. segment%nudged_tan .or. segment%specified_tan .or. &
+!       segment%oblique_tan .or. OBC%computed_vorticity .or. OBC%computed_strain) &
+!     allocate(segment%tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (segment%nudged_tan) &
+      allocate(segment%nudged_tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (segment%nudged_grad) &
+      allocate(segment%nudged_tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
+!   if (OBC%specified_vorticity .or. OBC%specified_strain .or. segment%radiation_grad .or. &
+!             segment%oblique_grad .or. segment%specified_grad) &
+!     allocate(segment%tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (segment%specified_sigma) &
+      allocate(segment%str_s(IsdB:IedB,JsdB:JedB), source=0.0)
+  endif
+
+end subroutine allocate_ice_OBC_segment_data
+
+!> Deallocate segment data fields
+subroutine deallocate_ice_OBC_segment_data(segment)
+  type(ice_OBC_segment_type), intent(inout) :: segment !< Open boundary segment
+
+  if (.not. segment%on_pe) return
+
+  if (allocated(segment%Cg)) deallocate(segment%Cg)
+  if (allocated(segment%normal_vel)) deallocate(segment%normal_vel)
+  if (allocated(segment%nudged_normal_vel)) deallocate(segment%nudged_normal_vel)
+  if (allocated(segment%tangential_vel)) deallocate(segment%tangential_vel)
+  if (allocated(segment%nudged_tangential_vel)) deallocate(segment%nudged_tangential_vel)
+  if (allocated(segment%nudged_tangential_grad)) deallocate(segment%nudged_tangential_grad)
+  if (allocated(segment%tangential_grad)) deallocate(segment%tangential_grad)
+  if (allocated(segment%str_s)) deallocate(segment%str_s)
+
+! if (associated(segment%tr_Reg)) call segment_tracer_registry_end(segment%tr_Reg)
+
+end subroutine deallocate_ice_OBC_segment_data
 
 !> register open boundary objects for boundary updates.
 subroutine register_ice_OBC(name, param_file, Reg)

@@ -746,8 +746,8 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
   logical :: do_hifreq_output  ! If true, output occurs every iterative step.
   logical :: do_trunc_its  ! If true, overly large velocities in the iterations are truncated.
   integer :: halo_sh_Ds  ! The halo size that can be used in calculating sh_Ds.
-  integer :: i, j, isc, iec, jsc, jec, n
-  logical :: apply_OBC = .false.
+  integer :: i, j, isc, iec, jsc, jec, m, n
+  logical :: apply_OBC = .false.                ! any local OBCs
 
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
@@ -759,9 +759,9 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
 
   halo_sh_Ds = min(isc-G%isd, jsc-G%jsd, 2)
 
-  if (associated(OBC)) then ; if (OBC%OBC_pe) then
-    apply_OBC = .true.
-  endif ; endif
+  if (associated(OBC)) then
+    if (OBC%OBC_pe) apply_OBC = .true.
+  endif
 
   ! Zero these arrays to accumulate sums.
   fxoc(:,:) = 0.0 ; fyoc(:,:) = 0.0
@@ -851,6 +851,45 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
       do i=isc,iec ; v_IC(i,J) = vi(i,j) ; enddo
     enddo
 !$OMP end do nowait
+    ! Allow specified boundaries to be non-zero
+    if (associated(OBC)) then
+      if (OBC%specified_u_BCs_exist_globally) then
+        do m = 1, OBC%number_of_segments
+          if (OBC%segment(m)%specified .and. OBC%segment(m)%is_E_or_W) then
+            I = OBC%segment(m)%HI%IsdB
+            if (OBC%segment(m)%direction == OBC_DIRECTION_E) then
+              do j = OBC%segment(m)%HI%jsd, OBC%segment(m)%HI%jed
+                ui_min_trunc(I,j) = ui_min_trunc(I-1,j)
+                ui_max_trunc(I,j) = ui_max_trunc(I-1,j)
+              enddo
+            else
+              do j = OBC%segment(m)%HI%jsd, OBC%segment(m)%HI%jed
+                ui_min_trunc(I,j) = ui_min_trunc(I+1,j)
+                ui_max_trunc(I,j) = ui_max_trunc(I+1,j)
+              enddo
+            endif
+          endif
+        enddo
+      endif
+      if (OBC%specified_v_BCs_exist_globally) then
+        do m = 1, OBC%number_of_segments
+          if (OBC%segment(m)%specified .and. OBC%segment(m)%is_N_or_S) then
+            J = OBC%segment(m)%HI%JsdB
+            if (OBC%segment(m)%direction == OBC_DIRECTION_N) then
+              do i = OBC%segment(m)%HI%isd, OBC%segment(m)%HI%ied
+                vi_min_trunc(i,J) = vi_min_trunc(i,J-1)
+                vi_max_trunc(i,J) = vi_max_trunc(i,J-1)
+              enddo
+            else
+              do i = OBC%segment(m)%HI%isd, OBC%segment(m)%HI%ied
+                vi_min_trunc(i,J) = vi_min_trunc(i,J+1)
+                vi_max_trunc(i,J) = vi_max_trunc(i,J+1)
+              enddo
+            endif
+          endif
+        enddo
+      endif
+    endif
   endif
 !$OMP do
   do j=jsc-1,jec+1 ; do i=isc-1,iec+1
@@ -1241,6 +1280,23 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                    mi_ratio_A_q(I,J) * sh_Ds(I,J) ) )
     enddo ; enddo
 
+    if (associated(OBC)) then
+      if (OBC%specified_sigma_BCs_exist_globally) then
+        do m = 1, OBC%number_of_segments
+          if (OBC%segment(m)%specified_sigma .and. OBC%segment(m)%is_E_or_W) then
+            I = OBC%segment(m)%HI%IsdB
+            do J = OBC%segment(m)%HI%Jsd, OBC%segment(m)%HI%Jed
+              CS%str_s(I,J) = OBC%segment(m)%str_s(I,J)
+            enddo
+          elseif (OBC%segment(m)%specified_sigma .and. OBC%segment(m)%is_N_or_S) then
+            J = OBC%segment(m)%HI%JsdB
+            do I = OBC%segment(m)%HI%Isd, OBC%segment(m)%HI%Ied
+              CS%str_s(I,J) = OBC%segment(m)%str_s(I,J)
+            enddo
+          endif
+        enddo
+      endif
+    endif
 
     cdRho = CS%cdw * US%L_to_Z*CS%Rho_ocean
     ! Save the current values of u for later use in updating v.
@@ -1341,6 +1397,18 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
         endif
       endif
     enddo ; enddo
+    if (associated(OBC)) then
+      if (OBC%specified_u_BCs_exist_globally) then
+        do m = 1, OBC%number_of_segments
+          if (OBC%segment(m)%specified .and. OBC%segment(m)%is_E_or_W) then
+            I = OBC%segment(m)%HI%IsdB
+            do j = OBC%segment(m)%HI%jsd, OBC%segment(m)%HI%jed
+              ui(I,j) = OBC%segment(m)%normal_vel(I,j)
+            enddo
+          endif
+        enddo
+      endif
+    endif
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,amer,bmer,cmer,dmer,u_tmp,G,CS, &
 !$OMP                                  dx2T,dy2B,uo,vo,vi,Cor_v,f2dt_v,I1_f2dt2_v,mi_v, &
 !$OMP                                  dt,PFv,fyat,I_cdRhoDt,cdRho,m_neglect,fyoc,fyic, &
@@ -1432,6 +1500,18 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
         endif
       endif
     enddo ; enddo
+    if (associated(OBC)) then
+      if (OBC%specified_v_BCs_exist_globally) then
+        do m = 1, OBC%number_of_segments
+          if (OBC%segment(m)%specified .and. OBC%segment(m)%is_N_or_S) then
+            J = OBC%segment(m)%HI%JsdB
+            do i = OBC%segment(m)%HI%isd, OBC%segment(m)%HI%ied
+              vi(i,J) = OBC%segment(m)%normal_vel(i,J)
+            enddo
+          endif
+        enddo
+      endif
+    endif
 
     if (do_hifreq_output) then
       time_step_end = time_it_start + real_to_time(n*US%T_to_s*dt)

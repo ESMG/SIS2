@@ -8,9 +8,9 @@ use MOM_cpu_clock,            only : cpu_clock_id, cpu_clock_begin, cpu_clock_en
 use MOM_diag_mediator,        only : time_type
 use MOM_error_handler,        only : MOM_mesg, MOM_error, FATAL, WARNING
 use MOM_file_parser,          only : get_param, log_version, param_file_type, log_param
-use MOM_grid,                 only : ocean_grid_type
 use MOM_dyn_horgrid,          only : dyn_horgrid_type
 use MOM_unit_scaling,         only : unit_scale_type
+use SIS_hor_grid,             only : SIS_hor_grid_type
 use SIS_open_boundary,        only : ice_OBC_registry_type, file_ice_OBC_CS
 use SIS_open_boundary,        only : register_file_ice_OBC, file_ice_OBC_end
 use SIS_open_boundary,        only : ice_OBC_type, update_ice_segment_data
@@ -77,7 +77,7 @@ end subroutine call_ice_OBC_register
 
 !> Calls appropriate routine to update the open boundary conditions.
 subroutine update_ice_OBC_data(OBC, G, IG, US, CS, Time)
-  type(ocean_grid_type),                     intent(in)    :: G    !< Ocean grid structure
+  type(SIS_hor_grid_type),                   intent(in)    :: G    !< Ocean grid structure
   type(ice_grid_type),                       intent(in)    :: IG   !< Ice vertical grid structure
   type(unit_scale_type),                     intent(in)    :: US   !< A dimensional unit scaling type
 ! type(thermo_var_ptrs),                     intent(in)    :: tv   !< Thermodynamics structure

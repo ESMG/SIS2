@@ -74,6 +74,8 @@ use SIS_fast_thermo,   only : do_update_ice_model_fast, avg_top_quantities, tota
 use SIS_fast_thermo,   only : redo_update_ice_model_fast, find_excess_fluxes
 use SIS_fast_thermo,   only : infill_array, SIS_fast_thermo_init, SIS_fast_thermo_end
 use SIS_framework,     only : set_domain, nullify_domain, broadcast_domain
+use SIS_open_boundary, only : ice_OBC_type, ice_OBC_segment_type, initialize_ice_segment_data
+use SIS_open_boundary, only : update_ice_segment_data, ice_open_boundary_init
 use SIS_restart,       only : restore_SIS_state, query_initialized=>query_inited, SIS_restart_init
 use SIS_restart,       only : determine_is_new_run, is_new_run
 use SIS_framework,     only : coupler_1d_bc_type, coupler_2d_bc_type, coupler_3d_bc_type
@@ -2375,6 +2377,17 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
 
     call ice_state_thermo_init(sIST, Ice, sG, sIG, US, param_file, Ice%sCS%Time, &
                                just_read_params=is_restart)
+
+    ! Finish initializing OBC stuff
+    if (associated(Ice%OBC)) then
+      ! Reads OBC parameters not pertaining to the location of the boundaries
+      call ice_open_boundary_init(sG, sIG, US, param_file, Ice%OBC, is_restart)
+      ! This controls user code for setting open boundary data
+      call initialize_ice_segment_data(sG, sIG, US, Ice%OBC, param_file)
+      ! Call this once to fill boundary arrays from fixed values
+      if (.not. Ice%OBC%needs_IO_for_data)  &
+          call update_ice_segment_data(sG, sIG, US, Ice%OBC, Ice%sCS%Time)
+    endif
 
     if (.not.is_restart) then
       ! Record the need to transfer ice to the correct thickness category.

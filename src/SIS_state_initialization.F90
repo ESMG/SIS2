@@ -19,8 +19,6 @@ use MOM_error_handler, only : callTree_enter, callTree_leave, callTree_waypoint
 use MOM_file_parser,   only : get_param, log_param, log_version, read_param, param_file_type
 use MOM_hor_index,     only : hor_index_type, hor_index_init
 use MOM_io,            only : file_exists, MOM_read_data, slasher
-use MOM_open_boundary, only : OBC_NONE
-use MOM_open_boundary, only : OBC_DIRECTION_E, OBC_DIRECTION_W, OBC_DIRECTION_N, OBC_DIRECTION_S
 use MOM_time_manager,  only : time_type, time_type_to_real, real_to_time
 use MOM_unit_scaling,  only : unit_scale_type
 use SIS_restart,       only : restore_SIS_state, query_initialized=>query_inited
@@ -28,8 +26,6 @@ use SIS_restart,       only : register_restart_field, only_read_from_restarts
 use SIS_get_input,     only : directories
 use SIS_types,         only : ice_state_type
 use SIS_hor_grid,      only : SIS_hor_grid_type, set_hor_grid, SIS_hor_grid_end
-use SIS_open_boundary, only : ice_OBC_type, ice_OBC_segment_type, initialize_ice_segment_data
-use SIS_open_boundary, only : update_ice_segment_data
 use SIS2_ice_thm,      only : get_SIS2_thermo_coefs, enth_from_TS, Temp_from_En_S, T_freeze, ice_thermo_type
 
 implicit none ; private

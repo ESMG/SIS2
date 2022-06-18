@@ -32,6 +32,7 @@ use MOM_unit_scaling,  only : unit_scale_type
 use MOM_EOS,           only : EOS_type, calculate_density_derivs
 
 
+use SIS_boundary_update, only : update_ice_OBC_data, update_ice_OBC_CS
 use SIS_continuity,    only : SIS_continuity_CS, summed_continuity, ice_cover_transport
 use SIS_debugging,     only : chksum, Bchksum, hchksum
 use SIS_debugging,     only : hchksum_pair, Bchksum_pair, uvchksum
@@ -150,6 +151,8 @@ type dyn_trans_CS ; private
   type(SIS_sum_out_CS), pointer   :: sum_output_CSp => NULL()
      !< Pointer to the control structure for the summed diagnostics module
   logical :: module_is_initialized = .false. !< If true, this module has been initialized.
+     !> A pointer to the update_ice_OBC control structure
+  type(update_ice_OBC_CS),    pointer :: update_ice_OBC_CSp => NULL()
 end type dyn_trans_CS
 
 !> A simplified 2-d description of the ice state integrated across thickness categories and layers.
@@ -393,6 +396,11 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
     ndyn_steps = max(CEILING(dt_adv_cycle/CS%dt_ice_dyn - 1e-6), 1)
   dt_slow_dyn = dt_adv_cycle / real(ndyn_steps)
   dt_slow_dyn_sec = US%T_to_s*dt_slow_dyn
+
+  if (associated(OBC)) then ; if (OBC%update_OBC) then
+    call update_ice_OBC_data(OBC, G, IG, US, CS%update_ice_OBC_CSp, CS%Time)
+  endif ; endif
+
 
   do nac=1,nadv_cycle
     Time_cycle_start = CS%Time - real_to_time((nadv_cycle-(nac-1))*US%T_to_s*dt_adv_cycle)

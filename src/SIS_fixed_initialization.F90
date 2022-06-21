@@ -6,7 +6,7 @@ module SIS_fixed_initialization
 
 use SIS_debugging, only       : hchksum, Bchksum, uvchksum, chksum
 use SIS_open_boundary, only   : ice_OBC_type, ice_open_boundary_config
-use SIS_open_boundary, only   : ice_OBC_impose_land_mask
+use SIS_open_boundary, only   : ice_OBC_impose_land_mask, ice_OBC_impose_normal_slope
 
 use MOM_domains, only         : pass_var
 use MOM_dyn_horgrid, only     : dyn_horgrid_type
@@ -79,6 +79,9 @@ subroutine SIS_initialize_fixed(G, US, PF, write_geom, output_dir, OBC)
 
   ! Determine the position of any open boundaries
   call ice_open_boundary_config(G, US, PF, OBC)
+
+  ! Set depth outside open boundaries
+  call ice_OBC_impose_normal_slope(OBC, G, G%bathyT)
 
   ! Make OBC mask consistent with land mask
   call ice_OBC_impose_land_mask(OBC, G, G%areaCu, G%areaCv, US)

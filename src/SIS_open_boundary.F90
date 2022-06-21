@@ -33,6 +33,7 @@ public file_ice_OBC_end
 public ice_open_boundary_config
 public ice_open_boundary_init
 public ice_OBC_impose_land_mask
+public ice_OBC_impose_normal_slope
 public register_file_ice_OBC
 public update_ice_segment_data
 public initialize_ice_segment_data
@@ -1211,6 +1212,50 @@ subroutine setup_v_point_obc(OBC, G, US, segment_str, l_seg, PF, reentrant_x)
     OBC%segment(l_seg)%values_needed = .true.
 end subroutine setup_v_point_obc
 
+
+!> Sets the slope of bathymetry normal to an open boundary to zero.
+subroutine ice_OBC_impose_normal_slope(OBC, G, depth)
+  type(ice_OBC_type),               pointer       :: OBC !< Open boundary control structure
+  type(dyn_horgrid_type),           intent(in)    :: G !< Ocean grid structure
+  real, dimension(SZI_(G),SZJ_(G)), intent(inout) :: depth !< Bathymetry at h-points
+  ! Local variables
+  integer :: i, j, n
+  type(ice_OBC_segment_type), pointer :: segment => NULL()
+
+  if (.not.associated(OBC)) return
+
+  if (.not.(OBC%specified_u_BCs_exist_globally .or.  OBC%specified_v_BCs_exist_globally .or. &
+              OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally)) &
+    return
+
+  do n=1,OBC%number_of_segments
+    segment=>OBC%segment(n)
+    if (.not. segment%on_pe) cycle
+    if (segment%direction == OBC_DIRECTION_E) then
+      I=segment%HI%IsdB
+      do j=segment%HI%jsd,segment%HI%jed
+        depth(i+1,j) = depth(i,j)
+      enddo
+    elseif (segment%direction == OBC_DIRECTION_W) then
+      I=segment%HI%IsdB
+      do j=segment%HI%jsd,segment%HI%jed
+        depth(i,j) = depth(i+1,j)
+      enddo
+    elseif (segment%direction == OBC_DIRECTION_N) then
+      J=segment%HI%JsdB
+      do i=segment%HI%isd,segment%HI%ied
+        depth(i,j+1) = depth(i,j)
+      enddo
+    elseif (segment%direction == OBC_DIRECTION_S) then
+      J=segment%HI%JsdB
+      do i=segment%HI%isd,segment%HI%ied
+        depth(i,j) = depth(i,j+1)
+      enddo
+    endif
+  enddo
+
+end subroutine ice_OBC_impose_normal_slope
+
 !> Reconcile masks and open boundaries, deallocate OBC on PEs where it is not needed.
 !! Also adjust u- and v-point cell area on specified open boundaries and mask all
 !! points outside open boundaries.
@@ -1294,7 +1339,7 @@ subroutine ice_OBC_impose_land_mask(OBC, G, areaCu, areaCv, US)
         if (segment%direction == OBC_DIRECTION_S) then
           areaCv(i,J) = G%areaT(i,j+1) ! Both of these are in [L2 ~> m2]
         else      ! North
-          areaCu(i,J) = G%areaT(i,j)   ! Both of these are in [L2 ~> m2]
+          areaCv(i,J) = G%areaT(i,j)   ! Both of these are in [L2 ~> m2]
         endif
       enddo
     endif

@@ -71,12 +71,6 @@ subroutine SIS_initialize_fixed(G, US, PF, write_geom, output_dir, OBC)
   ! Set up the bottom depth, G%bathyT, either analytically or from a file
   call SIS_initialize_topography(G%bathyT, G%max_depth, G, PF, US)
 
-  ! To initialize masks, the bathymetry in halo regions must be filled in
-  call pass_var(G%bathyT, G%Domain)
-
-  ! Initialize the various masks and any masked metrics.
-  call initialize_masks(G, PF, US)
-
   ! Determine the position of any open boundaries
   call ice_open_boundary_config(G, US, PF, OBC)
 
@@ -85,6 +79,12 @@ subroutine SIS_initialize_fixed(G, US, PF, write_geom, output_dir, OBC)
 
   ! Make OBC mask consistent with land mask
   call ice_OBC_impose_land_mask(OBC, G, G%areaCu, G%areaCv, US)
+
+  ! To initialize masks, the bathymetry in halo regions must be filled in
+  call pass_var(G%bathyT, G%Domain)
+
+  ! Initialize the various masks and any masked metrics.
+  call initialize_masks(G, PF, US)
 
   if (debug) then
     call hchksum(G%bathyT, 'SIS_initialize_fixed: depth ', G%HI, &

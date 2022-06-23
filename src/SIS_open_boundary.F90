@@ -1896,16 +1896,16 @@ subroutine allocate_ice_OBC_segment_data(OBC, segment)
     allocate(segment%normal_vel(IsdB:IedB,jsd:jed), source=0.0)
     if (segment%nudged) &
       allocate(segment%nudged_normal_vel(IsdB:IedB,jsd:jed), source=0.0)
-!   if (segment%radiation_tan .or. segment%nudged_tan .or. segment%specified_tan .or. &
-!       segment%oblique_tan .or. OBC%computed_vorticity .or. OBC%computed_strain) &
-!     allocate(segment%tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (segment%radiation_tan .or. segment%nudged_tan .or. segment%specified_tan .or. &
+        OBC%computed_vorticity .or. OBC%computed_strain) &
+      allocate(segment%tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
     if (segment%nudged_tan) &
       allocate(segment%nudged_tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
     if (segment%nudged_grad) &
       allocate(segment%nudged_tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
-!   if (OBC%specified_vorticity .or. OBC%specified_strain .or. segment%radiation_grad .or. &
-!             segment%oblique_grad .or. segment%specified_grad) &
-!     allocate(segment%tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (OBC%specified_vorticity .or. OBC%specified_strain .or. segment%radiation_grad .or. &
+              segment%specified_grad) &
+      allocate(segment%tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
     if (segment%specified_sigma) &
       allocate(segment%str_s(IsdB:IedB,JsdB:JedB), source=0.0)
   endif
@@ -1916,16 +1916,16 @@ subroutine allocate_ice_OBC_segment_data(OBC, segment)
     allocate(segment%normal_vel(isd:ied,JsdB:JedB), source=0.0)
     if (segment%nudged) &
       allocate(segment%nudged_normal_vel(isd:ied,JsdB:JedB), source=0.0)
-!   if (segment%radiation_tan .or. segment%nudged_tan .or. segment%specified_tan .or. &
-!       segment%oblique_tan .or. OBC%computed_vorticity .or. OBC%computed_strain) &
-!     allocate(segment%tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (segment%radiation_tan .or. segment%nudged_tan .or. segment%specified_tan .or. &
+        OBC%computed_vorticity .or. OBC%computed_strain) &
+      allocate(segment%tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
     if (segment%nudged_tan) &
       allocate(segment%nudged_tangential_vel(IsdB:IedB,JsdB:JedB), source=0.0)
     if (segment%nudged_grad) &
       allocate(segment%nudged_tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
-!   if (OBC%specified_vorticity .or. OBC%specified_strain .or. segment%radiation_grad .or. &
-!             segment%oblique_grad .or. segment%specified_grad) &
-!     allocate(segment%tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
+    if (OBC%specified_vorticity .or. OBC%specified_strain .or. segment%radiation_grad .or. &
+              segment%specified_grad) &
+      allocate(segment%tangential_grad(IsdB:IedB,JsdB:JedB), source=0.0)
     if (segment%specified_sigma) &
       allocate(segment%str_s(IsdB:IedB,JsdB:JedB), source=0.0)
   endif
@@ -1943,8 +1943,8 @@ subroutine deallocate_ice_OBC_segment_data(segment)
   if (allocated(segment%nudged_normal_vel)) deallocate(segment%nudged_normal_vel)
   if (allocated(segment%tangential_vel)) deallocate(segment%tangential_vel)
   if (allocated(segment%nudged_tangential_vel)) deallocate(segment%nudged_tangential_vel)
-  if (allocated(segment%nudged_tangential_grad)) deallocate(segment%nudged_tangential_grad)
   if (allocated(segment%tangential_grad)) deallocate(segment%tangential_grad)
+  if (allocated(segment%nudged_tangential_grad)) deallocate(segment%nudged_tangential_grad)
   if (allocated(segment%str_s)) deallocate(segment%str_s)
 
 ! if (associated(segment%tr_Reg)) call segment_tracer_registry_end(segment%tr_Reg)

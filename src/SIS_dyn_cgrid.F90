@@ -673,8 +673,9 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
              ! divided by the sum of the ocean areas around a point [L-2 ~> m-2].
     q, &     ! A potential-vorticity-like field for the ice, the Coriolis parameter
              ! divided by a spatially averaged mass per unit area [T-1 R-1 Z-1 ~> s-1 m2 kg-1].
-    dx2B, dy2B, &   ! dx^2 or dy^2 at B points [L2 ~> m2].
-    dx_dyB, dy_dxB  ! dx/dy or dy_dx at B points [nondim].
+    dx2B, dy2B, &     ! dx^2 or dy^2 at B points [L2 ~> m2].
+    dx_dyB, dy_dxB, & ! dx/dy or dy_dx at B points [nondim].
+    dvdx, dudy        ! Contributions to the circulation around B points [L2 T-1 ~> m2 s-1]
   real, dimension(SZIB_(G),SZJ_(G)) :: &
     azon, bzon, & !  _zon & _mer are the values of the Coriolis force which
     czon, dzon, & ! are applied to the neighboring values of vi & ui,
@@ -1194,12 +1195,68 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     !   With a halo of >= 2 this is:  do J=jsc-2,jec+1 ; do I=isc-2,iec+1
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,halo_sh_Ds,sh_Ds,G, &
 !$OMP                                  dx_dyB,dy_dxB,ui,vi)
+!   do J=jsc-halo_sh_Ds,jec+halo_sh_Ds-1 ; do I=isc-halo_sh_Ds,iec+halo_sh_Ds-1
+!     ! This uses a no-slip boundary condition.
+!     sh_Ds(I,J) = (2.0-G%mask2dBu(I,J)) * &
+!         (dx_dyB(I,J)*(ui(I,j+1)*G%IdxCu(I,j+1) - ui(I,j)*G%IdxCu(I,j)) + &
+!          dy_dxB(I,J)*(vi(i+1,J)*G%IdyCv(i+1,J) - vi(i,J)*G%IdyCv(i,J)))
+!   enddo ; enddo
     do J=jsc-halo_sh_Ds,jec+halo_sh_Ds-1 ; do I=isc-halo_sh_Ds,iec+halo_sh_Ds-1
-      ! This uses a no-slip boundary condition.
-      sh_Ds(I,J) = (2.0-G%mask2dBu(I,J)) * &
-          (dx_dyB(I,J)*(ui(I,j+1)*G%IdxCu(I,j+1) - ui(I,j)*G%IdxCu(I,j)) + &
-           dy_dxB(I,J)*(vi(i+1,J)*G%IdyCv(i+1,J) - vi(i,J)*G%IdyCv(i,J)))
+      dudy(I,J) = ui(I,j+1)*G%IdxCu(I,j+1) - ui(I,j)*G%IdxCu(I,j)
+      dvdx(I,J) = vi(i+1,J)*G%IdyCv(i+1,J) - vi(i,J)*G%IdyCv(i,J)
     enddo ; enddo
+    ! Adjust contributions to shearing strain and interpolated values of
+    ! thicknesses on open boundaries.
+    if (apply_OBC) then ; do m=1,OBC%number_of_segments
+      J = OBC%segment(m)%HI%JsdB ; I = OBC%segment(m)%HI%IsdB
+      if (OBC%zero_strain .or. OBC%freeslip_strain .or. OBC%computed_strain) then
+        if (OBC%segment(m)%is_N_or_S .and. (J >= jsc-2) .and. (J <= G%jsdB+1)) then
+          do I=OBC%segment(m)%HI%IsdB,OBC%segment(m)%HI%IedB
+            if (OBC%zero_strain) then
+              dvdx(I,J) = 0. ; dudy(I,J) = 0.
+            elseif (OBC%freeslip_strain) then
+              dudy(I,J) = 0.
+            elseif (OBC%computed_strain) then
+              if (OBC%segment(m)%direction == OBC_DIRECTION_N) then
+                dudy(I,J) = 2.0* (OBC%segment(m)%tangential_vel(I,J) - ui(I,j))*G%IdxCu(I,j)
+              else
+                dudy(I,J) = 2.0* (ui(I,j+1) - OBC%segment(m)%tangential_vel(I,J))*G%IdxCu(I,j+1)
+              endif
+            elseif (OBC%specified_strain) then
+              if (OBC%segment(m)%direction == OBC_DIRECTION_N) then
+                dudy(I,J) = OBC%segment(m)%tangential_grad(I,J)*G%IdxCu(I,j)*G%dxBu(I,J)
+              else
+                dudy(I,J) = OBC%segment(m)%tangential_grad(I,J)*G%IdxCu(I,j+1)*G%dxBu(I,J)
+              endif
+            endif
+          enddo
+        elseif (OBC%segment(m)%is_E_or_W .and. (I >= isc-2) .and. (I <= G%isdB+1)) then
+          do J=OBC%segment(m)%HI%JsdB,OBC%segment(n)%HI%JedB
+            if (OBC%zero_strain) then
+              dvdx(I,J) = 0. ; dudy(I,J) = 0.
+            elseif (OBC%freeslip_strain) then
+              dvdx(I,J) = 0.
+            elseif (OBC%computed_strain) then
+              if (OBC%segment(m)%direction == OBC_DIRECTION_E) then
+                dvdx(I,J) = 2.0* (OBC%segment(m)%tangential_vel(I,J) - vi(i,J))*G%IdyCv(i,J)
+              else
+                dvdx(I,J) = 2.0* (vi(i+1,J) - OBC%segment(m)%tangential_vel(I,J))*G%IdyCv(i+1,J)
+              endif
+            elseif (OBC%specified_strain) then
+              if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
+                dvdx(I,J) = OBC%segment(m)%tangential_grad(I,J)*G%IdyCv(i,J)*G%dxBu(I,J)
+              else
+                dvdx(I,J) = OBC%segment(m)%tangential_grad(I,J)*G%IdyCv(i+1,J)*G%dxBu(I,J)
+              endif
+            endif
+          enddo
+        endif
+      endif
+    enddo ; endif
+    do J=jsc-halo_sh_Ds,jec+halo_sh_Ds-1 ; do I=isc-halo_sh_Ds,iec+halo_sh_Ds-1
+      sh_Ds(I,J) = (2.0-G%mask2dBu(I,J)) * ( dy_dxB(I,J)*dvdx(I,J) + dx_dyB(I,J)*dudy(I,J) )
+    enddo ; enddo
+
     if (halo_sh_Ds < 2) call pass_var(sh_Ds, G%Domain, position=CORNER)
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,sh_Dt,sh_Dd,dy_dxT,dx_dyT,G,ui,vi)
     do j=jsc-1,jec+1 ; do i=isc-1,iec+1

@@ -1345,6 +1345,27 @@ subroutine ice_OBC_impose_land_mask(OBC, G, areaCu, areaCv, US)
     endif
   enddo
 
+  ! Unmask the corners, if we can.
+  do n=1,OBC%number_of_segments
+    segment=>OBC%segment(n)
+    if (.not. segment%on_pe) cycle
+    if (segment%is_E_or_W) then
+      ! Check ends for neighboring N_S segment
+      I=segment%HI%IsdB
+      if (segment%direction == OBC_DIRECTION_E) then
+        J=segment%HI%JsdB
+        if (OBC%segnum_v(i,J) /= OBC_NONE .and. OBC%segnum_u(I,j+1) /= OBC_NONE) G%mask2dBu(I,J) = 1
+        J=segment%HI%JedB
+        if (OBC%segnum_v(i,J) /= OBC_NONE .and. OBC%segnum_u(I,j) /= OBC_NONE) G%mask2dBu(I,J) = 1
+      else
+        J=segment%HI%JsdB
+        if (OBC%segnum_v(i+1,J) /= OBC_NONE .and. OBC%segnum_u(I,j+1) /= OBC_NONE) G%mask2dBu(I,J) = 1
+        J=segment%HI%JedB
+        if (OBC%segnum_v(i+1,J) /= OBC_NONE .and. OBC%segnum_u(I,j) /= OBC_NONE) G%mask2dBu(I,J) = 1
+      endif
+    endif
+  enddo
+
   ! G%mask2du will be open wherever bathymetry allows it.
   ! Bathymetry outside of the open boundary was adjusted to match
   ! the bathymetry inside so these points will be open unless the

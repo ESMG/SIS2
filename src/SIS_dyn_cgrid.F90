@@ -224,6 +224,10 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
                  "dynamics when the shear magnitudes are very weak. "//&
                  "Otherwise they go to -P_ice.  This setting is temporary.", &
                  default=.false.)
+  call get_param(param_file, mdl, "WEAK_COAST_STRESS", CS%weak_coast_stress, &
+                 "If true, do not use land masks in determining the area "//&
+                 "for stress convergence, which acts to weaken the stress-driven "//&
+                 "acceleration in coastal points.", default=.false.)
 
   call get_param(param_file, mdl, "PROJECT_ICE_DRAG_VEL", CS%project_drag_vel, &
                  "If true, project forward the ice velocity used in the "//&
@@ -985,12 +989,12 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     endif
   enddo ; enddo
   if (apply_OBC) then
-    do n=1,OBC%number_of_segments
-      if (.not. OBC%segment(n)%on_pe) cycle
-      I = OBC%segment(n)%HI%IsdB ; J = OBC%segment(n)%HI%JsdB
-      if (OBC%segment(n)%is_N_or_S) then
-        do I=OBC%segment(n)%HI%isd,OBC%segment(n)%HI%ied
-          if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
+    do m=1,OBC%number_of_segments
+      if (.not. OBC%segment(m)%on_pe) cycle
+      I = OBC%segment(m)%HI%IsdB ; J = OBC%segment(m)%HI%JsdB
+      if (OBC%segment(m)%is_N_or_S) then
+        do I=OBC%segment(m)%HI%isd,OBC%segment(m)%HI%ied-1
+          if (OBC%segment(m)%direction == OBC_DIRECTION_N) then
             if (CS%weak_coast_stress) then
               sum_area = 2.0 * (G%areaT(i,j) + G%areaT(i+1,j))
             else
@@ -1000,7 +1004,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
             mvq2 = mis(i,j) * mis(i+1,j)
             mi_ratio_A_q(I,J) = 32.0 * muq2 * mvq2 / ((m_neglect4 + (muq2 + mvq2) * &
                        ( 2.0 * (mis(i,j) + mis(i+1,j)) )**2) * sum_area)
-          else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
+          else ! (OBC%segment(m)%direction == OBC_DIRECTION_S)
             if (CS%weak_coast_stress) then
               sum_area = 2.0 * (G%areaT(i+1,j+1) + G%areaT(i,j+1))
             else
@@ -1012,9 +1016,9 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                        ( 2.0 * (mis(i+1,j) + mis(i+1,j+1)) )**2) * sum_area)
           endif
         enddo
-      elseif (OBC%segment(n)%is_E_or_W) then
-        do J=OBC%segment(n)%HI%jsd,OBC%segment(n)%HI%jed
-          if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
+      elseif (OBC%segment(m)%is_E_or_W) then
+        do J=OBC%segment(m)%HI%jsd,OBC%segment(m)%HI%jed-1
+          if (OBC%segment(m)%direction == OBC_DIRECTION_E) then
             if (CS%weak_coast_stress) then
               sum_area = 2.0 * (G%areaT(i,j) + G%areaT(i,j+1))
             else
@@ -1024,7 +1028,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
             mvq2 = 0.25 * (mis(i,j) + mis(i,j+1))**2
             mi_ratio_A_q(I,J) = 32.0 * muq2 * mvq2 / ((m_neglect4 + (muq2 + mvq2) * &
                        ( 2.0 * (mis(i,j) + mis(i,j+1)) )**2) * sum_area)
-          else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
+          else ! (OBC%segment(m)%direction == OBC_DIRECTION_W)
             if (CS%weak_coast_stress) then
               sum_area = 2.0 * (G%areaT(i+1,j) + G%areaT(i+1,j+1))
             else
@@ -1047,11 +1051,11 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
 !$OMP end do nowait
 !$OMP do
     if (apply_OBC) then
-      do n=1,OBC%number_of_segments
-        if (OBC%segment(n)%is_E_or_W) then
-          I = OBC%segment(n)%HI%IsdB
-          do j=OBC%segment(n)%HI%jsd,OBC%segment(n)%HI%jed
-            if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
+      do m=1,OBC%number_of_segments
+        if (OBC%segment(m)%is_E_or_W) then
+          I = OBC%segment(m)%HI%IsdB
+          do j=OBC%segment(m)%HI%jsd,OBC%segment(m)%HI%jed
+            if (OBC%segment(m)%direction == OBC_DIRECTION_E) then
               mi_u(I,j) = mis(i,j)
             else ! West
               mi_u(I,j) = mis(i+1,j)
@@ -1068,11 +1072,11 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
 !$OMP end do nowait
 !$OMP do
     if (apply_OBC) then
-      do n=1,OBC%number_of_segments
-        if (OBC%segment(n)%is_N_or_S) then
-          J = OBC%segment(n)%HI%JsdB
-          do i=OBC%segment(n)%HI%isd,OBC%segment(n)%HI%ied
-            if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
+      do m=1,OBC%number_of_segments
+        if (OBC%segment(m)%is_N_or_S) then
+          J = OBC%segment(m)%HI%JsdB
+          do i=OBC%segment(m)%HI%isd,OBC%segment(m)%HI%ied
+            if (OBC%segment(m)%direction == OBC_DIRECTION_N) then
               mi_v(i,J) = mis(i,j)
             else ! South
               mi_v(i,J) = mis(i,j+1)
@@ -1089,27 +1093,27 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
          (((G%areaT(i,j) * mis(i,j) + G%areaT(i+1,j+1) * mis(i+1,j+1)) + &
            (G%areaT(i+1,j) * mis(i+1,j) + G%areaT(i,j+1) * mis(i,j+1))) + tot_area * m_neglect)
   enddo ; enddo
-  if (apply_OBC) then ; do n=1,OBC%number_of_segments
-    I = OBC%segment(n)%HI%IsdB ; J = OBC%segment(n)%HI%JsdB
-    if (OBC%segment(n)%is_N_or_S) then
-      do I=OBC%segment(n)%HI%isd,OBC%segment(n)%HI%ied
-        if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
+  if (apply_OBC) then ; do m=1,OBC%number_of_segments
+    I = OBC%segment(m)%HI%IsdB ; J = OBC%segment(m)%HI%JsdB
+    if (OBC%segment(m)%is_N_or_S) then
+      do I=OBC%segment(m)%HI%isd,OBC%segment(m)%HI%ied-1
+        if (OBC%segment(m)%direction == OBC_DIRECTION_N) then
           tot_area = G%areaT(i,j) + G%areaT(i+1,j)
           q(I,J) = G%CoriolisBu(I,J) * tot_area / &
                (((G%areaT(i,j) * mis(i,j) + G%areaT(i+1,j) * mis(i+1,j))) + tot_area * m_neglect)
-        else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
+        else ! (OBC%segment(m)%direction == OBC_DIRECTION_S)
           tot_area = G%areaT(i,j+1) + G%areaT(i+1,j+1)
           q(I,J) = G%CoriolisBu(I,J) * tot_area / &
                (((G%areaT(i,j+1) * mis(i,j+1) + G%areaT(i+1,j+1) * mis(i+1,j+1))) + tot_area * m_neglect)
         endif
       enddo
-    elseif (OBC%segment(n)%is_E_or_W) then
-      do J=OBC%segment(n)%HI%jsd,OBC%segment(n)%HI%jed
-        if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
+    elseif (OBC%segment(m)%is_E_or_W) then
+      do J=OBC%segment(m)%HI%jsd,OBC%segment(m)%HI%jed-1
+        if (OBC%segment(m)%direction == OBC_DIRECTION_E) then
           tot_area = G%areaT(i,j) + G%areaT(i,j+1)
           q(I,J) = G%CoriolisBu(I,J) * tot_area / &
                (((G%areaT(i,j) * mis(i,j) + G%areaT(i,j+1) * mis(i,j+1))) + tot_area * m_neglect)
-        else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
+        else ! (OBC%segment(m)%direction == OBC_DIRECTION_W)
           tot_area = G%areaT(i+1,j) + G%areaT(i+1,j+1)
           q(I,J) = G%CoriolisBu(I,J) * tot_area / &
                (((G%areaT(i+1,j) * mis(i+1,j) + G%areaT(i+1,j+1) * mis(i+1,j+1))) + tot_area * m_neglect)
@@ -1132,10 +1136,10 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     ! Calculate the zonal acceleration due to the sea level slope.
     PFu(I,j) = -G%g_Earth*(sea_lev(i+1,j)-sea_lev(i,j)) * G%IdxCu(I,j)
   enddo ; enddo
-  if (apply_OBC) then ; do n=1,OBC%number_of_segments
-    I = OBC%segment(n)%HI%IsdB
-    if (OBC%segment(n)%is_E_or_W) then
-      do j=OBC%segment(n)%HI%jsd,OBC%segment(n)%HI%jed
+  if (apply_OBC) then ; do m=1,OBC%number_of_segments
+    I = OBC%segment(m)%HI%IsdB
+    if (OBC%segment(m)%is_E_or_W) then
+      do j=OBC%segment(m)%HI%jsd,OBC%segment(m)%HI%jed
         PFu(I,j) = 0.0
       enddo
     endif
@@ -1156,10 +1160,10 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     ! Calculate the meridional acceleration due to the sea level slope.
     PFv(i,J) = -G%g_Earth*(sea_lev(i,j+1)-sea_lev(i,j)) * G%IdyCv(i,J)
   enddo ; enddo
-  if (apply_OBC) then ; do n=1,OBC%number_of_segments
-    J = OBC%segment(n)%HI%JsdB
-    if (OBC%segment(n)%is_N_or_S) then
-      do i=OBC%segment(n)%HI%isd,OBC%segment(n)%HI%ied
+  if (apply_OBC) then ; do m=1,OBC%number_of_segments
+    J = OBC%segment(m)%HI%JsdB
+    if (OBC%segment(m)%is_N_or_S) then
+      do i=OBC%segment(m)%HI%isd,OBC%segment(m)%HI%ied
         PFv(i,J) = 0.0
       enddo
     endif
@@ -1231,7 +1235,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
             endif
           enddo
         elseif (OBC%segment(m)%is_E_or_W .and. (I >= isc-2) .and. (I <= G%isdB+1)) then
-          do J=OBC%segment(m)%HI%JsdB,OBC%segment(n)%HI%JedB
+          do J=OBC%segment(m)%HI%JsdB,OBC%segment(m)%HI%JedB
             if (OBC%zero_strain) then
               dvdx(I,J) = 0. ; dudy(I,J) = 0.
             elseif (OBC%freeslip_strain) then
@@ -1243,7 +1247,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                 dvdx(I,J) = 2.0* (vi(i+1,J) - OBC%segment(m)%tangential_vel(I,J))*G%IdyCv(i+1,J)
               endif
             elseif (OBC%specified_strain) then
-              if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
+              if (OBC%segment(m)%direction == OBC_DIRECTION_E) then
                 dvdx(I,J) = OBC%segment(m)%tangential_grad(I,J)*G%IdyCv(i,J)*G%dxBu(I,J)
               else
                 dvdx(I,J) = OBC%segment(m)%tangential_grad(I,J)*G%IdyCv(i+1,J)*G%dxBu(I,J)
@@ -1269,6 +1273,30 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                     G%IareaT(i,j)*(G%dxCv(i,J) * vi(i,J) - &
                                    G%dxCv(i,J-1)*vi(i,J-1)))
     enddo ; enddo
+    if (apply_OBC) then ; do m=1,OBC%number_of_segments
+      I = OBC%segment(m)%HI%IsdB ; J = OBC%segment(m)%HI%JsdB
+      if (OBC%segment(m)%is_N_or_S) then
+        do I=OBC%segment(m)%HI%isd,OBC%segment(m)%HI%ied
+          if (OBC%segment(m)%direction == OBC_DIRECTION_N) then
+            sh_Dt(i,j+1) = sh_Dt(i,j)
+            sh_Dd(i,j+1) = sh_Dd(i,j)
+          else ! (OBC%segment(m)%direction == OBC_DIRECTION_S)
+            sh_Dt(i,j) = sh_Dt(i,j+1)
+            sh_Dd(i,j) = sh_Dd(i,j+1)
+          endif
+        enddo
+      elseif (OBC%segment(m)%is_E_or_W) then
+        do J=OBC%segment(m)%HI%jsd,OBC%segment(m)%HI%jed
+          if (OBC%segment(m)%direction == OBC_DIRECTION_E) then
+            sh_Dt(i+1,j) = sh_Dt(i,j)
+            sh_Dd(i+1,j) = sh_Dd(i,j)
+          else ! (OBC%segment(m)%direction == OBC_DIRECTION_W)
+            sh_Dt(i,j) = sh_Dt(i+1,j)
+            sh_Dd(i,j) = sh_Dd(i+1,j)
+          endif
+        enddo
+      endif
+    enddo ; endif
 
     if (CS%project_ci) then
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,ci_proj,ci,dt_cumulative, &
@@ -1302,6 +1330,31 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
         zeta(i,j) = 0.
       endif
     enddo ; enddo
+
+    if (apply_OBC) then ; do m=1,OBC%number_of_segments
+      I = OBC%segment(m)%HI%IsdB ; J = OBC%segment(m)%HI%JsdB
+      if (OBC%segment(m)%is_N_or_S) then
+        do I=OBC%segment(m)%HI%isd,OBC%segment(m)%HI%ied
+          if (OBC%segment(m)%direction == OBC_DIRECTION_N) then
+            del_sh(i,j+1) = del_sh(i,j)
+            zeta(i,j+1) = zeta(i,j)
+          else ! (OBC%segment(m)%direction == OBC_DIRECTION_S)
+            del_sh(i,j) = del_sh(i,j+1)
+            zeta(i,j) = zeta(i,j+1)
+          endif
+        enddo
+      elseif (OBC%segment(m)%is_E_or_W) then
+        do J=OBC%segment(m)%HI%jsd,OBC%segment(m)%HI%jed
+          if (OBC%segment(m)%direction == OBC_DIRECTION_E) then
+            del_sh(i+1,j) = del_sh(i,j)
+            zeta(i+1,j) = zeta(i,j)
+          else ! (OBC%segment(m)%direction == OBC_DIRECTION_W)
+            del_sh(i,j) = del_sh(i+1,j)
+            zeta(i,j) = zeta(i+1,j)
+          endif
+        enddo
+      endif
+    enddo ; endif
 
     ! Step the stress component equations semi-implicitly.
     I_1pdt_T = 1.0 / (1.0 + dt_2Tdamp)
@@ -1851,7 +1904,7 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, OBC, 
 !  real :: str_t_q     ! CS%str_t interpolated to a vorticity point [R Z L2 T-2 ~> Pa m].
   logical :: apply_OBC = .false.
 
-  integer :: i, j, isc, iec, jsc, jec, n
+  integer :: i, j, isc, iec, jsc, jec, m
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
   lim = 1.0 ; if (present(limit)) lim = limit
@@ -1888,12 +1941,12 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, OBC, 
   enddo ; enddo
 
   if (apply_OBC) then
-    do n=1,OBC%number_of_segments
-      if (.not. OBC%segment(n)%on_pe) cycle
-      I = OBC%segment(n)%HI%IsdB ; J = OBC%segment(n)%HI%JsdB
-      if (OBC%segment(n)%is_N_or_S .and. (J >= Jsc-1) .and. (J <= Jec)) then
-        do I = max(Isc-1,OBC%segment(n)%HI%isd), min(Iec,OBC%segment(n)%HI%ied)
-          if (OBC%segment(n)%direction == OBC_DIRECTION_N) then
+    do m=1,OBC%number_of_segments
+      if (.not. OBC%segment(m)%on_pe) cycle
+      I = OBC%segment(m)%HI%IsdB ; J = OBC%segment(m)%HI%JsdB
+      if (OBC%segment(m)%is_N_or_S .and. (J >= Jsc-1) .and. (J <= Jec)) then
+        do I = max(Isc-1,OBC%segment(m)%HI%isd), min(Iec,OBC%segment(m)%HI%ied)
+          if (OBC%segment(m)%direction == OBC_DIRECTION_N) then
             if (CS%weak_coast_stress) then
               sum_area = G%areaT(i,j) + G%areaT(i+1,j)
             else
@@ -1906,7 +1959,7 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, OBC, 
 
             if (CS%EC*str_s(I,J) > lim_2*pres_avg) str_s(I,J) = I_2EC*pres_avg
             if (CS%EC*str_s(I,J) < -lim_2*pres_avg) str_s(I,J) = -I_2EC*pres_avg
-          else ! (OBC%segment(n)%direction == OBC_DIRECTION_S)
+          else ! (OBC%segment(m)%direction == OBC_DIRECTION_S)
             if (CS%weak_coast_stress) then
               sum_area = G%areaT(i+1,j+1) + G%areaT(i,j+1)
             else
@@ -1921,9 +1974,9 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, OBC, 
             if (CS%EC*str_s(I,J) < -lim_2*pres_avg) str_s(I,J) = -I_2EC*pres_avg
           endif
         enddo
-      elseif (OBC%segment(n)%is_E_or_W .and. (I >= Isc-1) .and. (I <= Iec)) then
-        do J = max(Jsc-1,OBC%segment(n)%HI%jsd), min(Jec,OBC%segment(n)%HI%jed)
-          if (OBC%segment(n)%direction == OBC_DIRECTION_E) then
+      elseif (OBC%segment(m)%is_E_or_W .and. (I >= Isc-1) .and. (I <= Iec)) then
+        do J = max(Jsc-1,OBC%segment(m)%HI%jsd), min(Jec,OBC%segment(m)%HI%jed)
+          if (OBC%segment(m)%direction == OBC_DIRECTION_E) then
             if (CS%weak_coast_stress) then
               sum_area = G%areaT(i,j) + G%areaT(i,j+1)
             else
@@ -1936,7 +1989,7 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, OBC, 
 
             if (CS%EC*str_s(I,J) > lim_2*pres_avg) str_s(I,J) = I_2EC*pres_avg
             if (CS%EC*str_s(I,J) < -lim_2*pres_avg) str_s(I,J) = -I_2EC*pres_avg
-          else ! (OBC%segment(n)%direction == OBC_DIRECTION_W)
+          else ! (OBC%segment(m)%direction == OBC_DIRECTION_W)
             if (CS%weak_coast_stress) then
               sum_area = G%areaT(i+1,j) + G%areaT(i+1,j+1)
             else

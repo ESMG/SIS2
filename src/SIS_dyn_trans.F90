@@ -334,9 +334,7 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
   type(icebergs),             pointer       :: icebergs_CS !< A control structure for the iceberg model.
   type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp !< The structure for controlling calls to
                                                    !! auxiliary ice tracer packages
-  type(ice_OBC_type),         pointer       :: OBC !< This open boundary condition type specifies
-                                                   !! whether, where, and what open boundary
-                                                   !! conditions are used.
+  type(ice_OBC_type),         pointer       :: OBC  !< Open boundary structure.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))   :: &
@@ -400,7 +398,6 @@ subroutine SIS_dynamics_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, U
   if (associated(OBC)) then ; if (OBC%update_OBC) then
     call update_ice_OBC_data(OBC, G, IG, US, CS%update_ice_OBC_CSp, CS%Time)
   endif ; endif
-
 
   do nac=1,nadv_cycle
     Time_cycle_start = CS%Time - real_to_time((nadv_cycle-(nac-1))*US%T_to_s*dt_adv_cycle)
@@ -678,9 +675,7 @@ subroutine SIS_multi_dyn_trans(IST, OSS, FIA, IOF, dt_slow, CS, icebergs_CS, G, 
   type(icebergs),             pointer       :: icebergs_CS !< A control structure for the iceberg model.
   type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp !< The structure for controlling calls to
                                                    !! auxiliary ice tracer packages
-  type(ice_OBC_type),         pointer       :: OBC !< This open boundary condition type specifies
-                                                   !! whether, where, and what open boundary
-                                                   !! conditions are used.
+  type(ice_OBC_type),         pointer       :: OBC !< Open boundary structure.
   logical,          optional, intent(in)    :: start_cycle !< This indicates whether this call is to be
                                                    !! treated as the first call to SIS_multi_dyn_trans
                                                    !! in a time-stepping cycle; missing is like true.
@@ -927,9 +922,7 @@ subroutine SIS_merged_dyn_cont(OSS, FIA, IOF, DS2d, IST, dt_cycle, Time_start, G
   type(unit_scale_type),      intent(in)    :: US  !< A structure with unit conversion factors
   type(ice_grid_type),        intent(inout) :: IG  !< The sea-ice specific grid type
   type(dyn_trans_CS),         pointer       :: CS  !< The control structure for the SIS_dyn_trans module
-  type(ice_OBC_type),         pointer       :: OBC !< This open boundary condition type specifies
-                                                   !! whether, where, and what open boundary
-                                                   !! conditions are used.
+  type(ice_OBC_type),         pointer       :: OBC !< Open boundary structure.
   logical,          optional, intent(in)    :: end_call !< If present and false, this call is
                                                    !! the last in the series of advective updates.
 
@@ -1175,9 +1168,7 @@ subroutine slab_ice_dyn_trans(IST, OSS, FIA, IOF, dt_slow, CS, G, US, IG, tracer
   type(dyn_trans_CS),         pointer       :: CS  !< The control structure for the SIS_dyn_trans module
   type(SIS_tracer_flow_control_CS), pointer :: tracer_CSp !< The structure for controlling calls to
                                                    !! auxiliary ice tracer packages
-  type(ice_OBC_type),         pointer       :: OBC !< This open boundary condition type specifies
-                                                   !! whether, where, and what open boundary
-                                                   !! conditions are used.
+  type(ice_OBC_type),         pointer       :: OBC !< Open boundary structure.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))   :: &
@@ -1635,9 +1626,7 @@ subroutine set_ocean_top_stress_Cgrid(IOF, windstr_x_water, windstr_y_water, &
   real, dimension(SZI_(G),SZJ_(G),0:IG%CatIce), &
                              intent(in)    :: part_size !< The fractional area coverage of the ice
                                                   !! thickness categories [nondim], 0-1
-  type(ice_OBC_type),        pointer       :: OBC !< This open boundary condition type specifies
-                                                  !! whether, where, and what open boundary
-                                                  !! conditions are used.
+  type(ice_OBC_type),        pointer       :: OBC  !< Open boundary structure.
 
   real    :: ps_vel ! part_size interpolated to a velocity point [nondim].
   integer :: i, j, k, isc, iec, jsc, jec, ncat
@@ -1918,9 +1907,7 @@ subroutine set_ocean_top_stress_C2(IOF, windstr_x_water, windstr_y_water, &
   real, dimension(SZI_(G),SZJ_(G)), &
                              intent(in)    :: ice_cover !< The fractional ice area coverage [nondim], 0-1
   type(unit_scale_type),     intent(in)    :: US  !< A structure with unit conversion factors
-  type(ice_OBC_type),        pointer       :: OBC !< This open boundary condition type specifies
-                                                  !! whether, where, and what open boundary
-                                                  !! conditions are used.
+  type(ice_OBC_type),        pointer       :: OBC  !< Open boundary structure.
 
   real    :: ps_ice, ps_ocn ! ice_free and ice_cover interpolated to a velocity point [nondim].
   integer :: i, j, k, isc, iec, jsc, jec
@@ -2077,9 +2064,7 @@ subroutine set_wind_stresses_C(FIA, ice_cover, ice_free, WindStr_x_Cu, WindStr_y
   real,                              intent(in)   :: max_ice_cover !< The fractional ice coverage
                         !! that is close enough to 1 to be complete for the purpose of calculating
                         !! wind stresses [nondim].
-  type(ice_OBC_type),                pointer      :: OBC !< This open boundary condition type specifies
-                                                   !! whether, where, and what open boundary
-                                                   !! conditions are used.
+  type(ice_OBC_type),                pointer      :: OBC  !< Open boundary structure.
 
   ! Local variables
   real, dimension(SZI_(G),SZJ_(G))   :: &
@@ -2103,6 +2088,9 @@ subroutine set_wind_stresses_C(FIA, ice_cover, ice_free, WindStr_x_Cu, WindStr_y
     local_open_u_BC = OBC%open_u_BCs_exist_globally
     local_open_v_BC = OBC%open_v_BCs_exist_globally
   endif ; endif
+
+! if (local_open_u_BC .or. local_open_v_BC) &
+!     call SIS_error(FATAL, "No OBCs coded yet in set_wind_stresses_C")
 
   !$OMP parallel do default(shared) private(FIA_ice_cover, ice_cover_now)
   do j=jsd,jed ; do i=isd,ied
@@ -2138,146 +2126,49 @@ subroutine set_wind_stresses_C(FIA, ice_cover, ice_free, WindStr_x_Cu, WindStr_y
   ! the stresses are being passed to the ocean on a B-grid.
   !$OMP parallel default(shared) private(weights,I_wts)
   !$OMP do
-  if (local_open_u_BC) then
-    do j=jsc-1,jec+1 ; do I=isc-1,iec
-      l_seg = OBC%segnum_u(I,j)
-      weights = (G%areaT(i,j)*ice_cover(i,j) + G%areaT(i+1,j)*ice_cover(i+1,j))
-      if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
-        WindStr_x_Cu(I,j) = G%mask2dCu(I,j) * &
-            (G%areaT(i,j) * ice_cover(i,j) * WindStr_x_A(i,j) + &
-             G%areaT(i+1,j)*ice_cover(i+1,j)*WindStr_x_A(i+1,j)) * I_wts
-      else
-        WindStr_x_Cu(I,j) = 0.0
-      endif
-      weights = (G%areaT(i,j)*ice_free(i,j) + G%areaT(i+1,j)*ice_free(i+1,j))
-      if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
-        WindStr_x_ocn_Cu(I,j) = G%mask2dCu(I,j) * &
-            (G%areaT(i,j) * ice_free(i,j) * WindStr_x_ocn_A(i,j) + &
-             G%areaT(i+1,j) * ice_free(i+1,j) * WindStr_x_ocn_A(i+1,j)) * I_wts
-      else
-        WindStr_x_ocn_Cu(I,j) = 0.0
-      endif
-      if (l_seg /= OBC_NONE) then
-        if (OBC%segment(l_seg)%open) then
-          if (OBC%segment(l_seg)%direction == OBC_DIRECTION_E) then
-            weights = G%areaT(i,j)*ice_cover(i,j)
-            if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
-              WindStr_x_Cu(I,j) = G%mask2dCu(I,j) * &
-                 (G%areaT(i,j) * ice_cover(i,j)) * (WindStr_x_A(i,j) * I_wts)
-            endif
-            weights = G%areaT(i,j)*ice_free(i,j)
-            if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
-              WindStr_x_ocn_Cu(I,j) = G%mask2dCu(I,j) * &
-                  (G%areaT(i,j) * ice_free(i,j)) * (WindStr_x_ocn_A(i,j) * I_wts)
-            endif
-          else
-            weights = G%areaT(i+1,j)*ice_cover(i+1,j)
-            if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
-              WindStr_x_Cu(I,j) = G%mask2dCu(I,j) * &
-                 (G%areaT(i+1,j) * ice_cover(i+1,j)) * (WindStr_x_A(i+1,j) * I_wts)
-            endif
-            weights = G%areaT(i+1,j)*ice_free(i+1,j)
-            if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
-              WindStr_x_ocn_Cu(I,j) = G%mask2dCu(I,j) * &
-                   (G%areaT(i+1,j) * ice_free(i+1,j)) * (WindStr_x_ocn_A(i+1,j) * I_wts)
-            endif
-          endif
-        endif
-      endif
-    enddo ; enddo
-  else
-    do j=jsc-1,jec+1 ; do I=isc-1,iec
-      weights = (G%areaT(i,j)*ice_cover(i,j) + G%areaT(i+1,j)*ice_cover(i+1,j))
-      if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
-        WindStr_x_Cu(I,j) = G%mask2dCu(I,j) * &
-            (G%areaT(i,j) * ice_cover(i,j) * WindStr_x_A(i,j) + &
-             G%areaT(i+1,j)*ice_cover(i+1,j)*WindStr_x_A(i+1,j)) * I_wts
-      else
-        WindStr_x_Cu(I,j) = 0.0
-      endif
+  do j=jsc-1,jec+1 ; do I=isc-1,iec
+    weights = (G%areaT(i,j)*ice_cover(i,j) + G%areaT(i+1,j)*ice_cover(i+1,j))
+    if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
+      WindStr_x_Cu(I,j) = G%mask2dCu(I,j) * &
+          (G%areaT(i,j) * ice_cover(i,j) * WindStr_x_A(i,j) + &
+           G%areaT(i+1,j)*ice_cover(i+1,j)*WindStr_x_A(i+1,j)) * I_wts
+    else
+      WindStr_x_Cu(I,j) = 0.0
+    endif
 
-      weights = (G%areaT(i,j)*ice_free(i,j) + G%areaT(i+1,j)*ice_free(i+1,j))
-      if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
-        WindStr_x_ocn_Cu(I,j) = G%mask2dCu(I,j) * &
-            (G%areaT(i,j) * ice_free(i,j) * WindStr_x_ocn_A(i,j) + &
-             G%areaT(i+1,j)*ice_free(i+1,j)*WindStr_x_ocn_A(i+1,j)) * I_wts
-      else
-        WindStr_x_ocn_Cu(I,j) = 0.0
-      endif
-    enddo ; enddo
-  endif
+    weights = (G%areaT(i,j)*ice_free(i,j) + G%areaT(i+1,j)*ice_free(i+1,j))
+    if (G%mask2dCu(I,j) * weights > 0.0) then ; I_wts = 1.0 / weights
+      WindStr_x_ocn_Cu(I,j) = G%mask2dCu(I,j) * &
+          (G%areaT(i,j) * ice_free(i,j) * WindStr_x_ocn_A(i,j) + &
+           G%areaT(i+1,j)*ice_free(i+1,j)*WindStr_x_ocn_A(i+1,j)) * I_wts
+    else
+      WindStr_x_ocn_Cu(I,j) = 0.0
+    endif
+  enddo ; enddo
   !$OMP end do nowait
   !$OMP do
-  if (local_open_v_BC) then
-    do J=jsc-1,jec ; do i=isc-1,iec+1
-      l_seg = OBC%segnum_v(i,J)
-      weights = (G%areaT(i,j)*ice_cover(i,j) + G%areaT(i,j+1)*ice_cover(i,j+1))
-      if (G%mask2dCv(i,J) * weights > 0.0) then ; I_wts = 1.0 / weights
-        WindStr_y_Cv(i,J) = G%mask2dCv(i,J) * &
-            (G%areaT(i,j) * ice_cover(i,j) * WindStr_y_A(i,j) + &
-             G%areaT(i,j+1)*ice_cover(i,j+1)*WindStr_y_A(i,j+1)) * I_wts
-      else
-        WindStr_y_Cv(i,J) = 0.0
-      endif
+  do J=jsc-1,jec ; do i=isc-1,iec+1
+    weights = (G%areaT(i,j)*ice_cover(i,j) + G%areaT(i,j+1)*ice_cover(i,j+1))
+    if (G%mask2dCv(i,J) * weights > 0.0) then ; I_wts = 1.0 / weights
+      WindStr_y_Cv(i,J) = G%mask2dCv(i,J) * &
+          (G%areaT(i,j) * ice_cover(i,j) * WindStr_y_A(i,j) + &
+           G%areaT(i,j+1)*ice_cover(i,j+1)*WindStr_y_A(i,j+1)) * I_wts
+    else
+      WindStr_y_Cv(i,J) = 0.0
+    endif
 
-      weights = (G%areaT(i,j)*ice_free(i,j) + G%areaT(i,j+1)*ice_free(i,j+1))
-      if (weights > 0.0) then ; I_wts = 1.0 / weights
-        WindStr_y_ocn_Cv(i,J) = G%mask2dCv(i,J) * &
-            (G%areaT(i,j) * ice_free(i,j) * WindStr_y_ocn_A(i,j) + &
-             G%areaT(i,j+1)*ice_free(i,j+1)*WindStr_y_ocn_A(i,j+1)) * I_wts
-      else
-        WindStr_y_ocn_Cv(i,J) = 0.0
-      endif
-      if (l_seg /= OBC_NONE) then
-        if (OBC%segment(l_seg)%open) then
-          if (OBC%segment(l_seg)%direction == OBC_DIRECTION_N) then
-            weights = G%areaT(i,j)*ice_cover(i,j)
-            if (G%mask2dCv(i,J) * weights > 0.0) then ; I_wts = 1.0 / weights
-              WindStr_y_Cv(i,J) = G%mask2dCv(i,J) * &
-                  (G%areaT(i,j) * ice_cover(i,j)) * (WindStr_y_A(i,j) * I_wts)
-                  weights = (G%areaT(i,j)*ice_free(i,j) + G%areaT(i,j+1)*ice_free(i,j+1))
-            endif
-            if (weights > 0.0) then ; I_wts = 1.0 / weights
-              WindStr_y_ocn_Cv(i,J) = G%mask2dCv(i,J) * &
-                  (G%areaT(i,j) * ice_free(i,j)) * (WindStr_y_ocn_A(i,j) * I_wts)
-            endif
-          else
-            weights = G%areaT(i,j+1)*ice_cover(i,j+1)
-            if (G%mask2dCv(i,J) * weights > 0.0) then ; I_wts = 1.0 / weights
-              WindStr_y_Cv(i,J) = G%mask2dCv(i,J) * &
-                  (G%areaT(i,j+1) * ice_cover(i,j+1)) * (WindStr_y_A(i,j+1) * I_wts)
-            endif
-            weights = (G%areaT(i,j)*ice_free(i,j) + G%areaT(i,j+1)*ice_free(i,j+1))
-            if (weights > 0.0) then ; I_wts = 1.0 / weights
-              WindStr_y_ocn_Cv(i,J) = G%mask2dCv(i,J) * &
-                  (G%areaT(i,j+1) * ice_free(i,j+1)) * (WindStr_y_ocn_A(i,j+1) * I_wts)
-            endif
-          endif
-        endif
-      endif
-    enddo ; enddo
-  else
-    do J=jsc-1,jec ; do i=isc-1,iec+1
-      weights = (G%areaT(i,j)*ice_cover(i,j) + G%areaT(i,j+1)*ice_cover(i,j+1))
-      if (G%mask2dCv(i,J) * weights > 0.0) then ; I_wts = 1.0 / weights
-        WindStr_y_Cv(i,J) = G%mask2dCv(i,J) * &
-            (G%areaT(i,j) * ice_cover(i,j) * WindStr_y_A(i,j) + &
-             G%areaT(i,j+1)*ice_cover(i,j+1)*WindStr_y_A(i,j+1)) * I_wts
-      else
-        WindStr_y_Cv(i,J) = 0.0
-      endif
-
-      weights = (G%areaT(i,j)*ice_free(i,j) + G%areaT(i,j+1)*ice_free(i,j+1))
-      if (weights > 0.0) then ; I_wts = 1.0 / weights
-        WindStr_y_ocn_Cv(i,J) = G%mask2dCv(i,J) * &
-            (G%areaT(i,j) * ice_free(i,j) * WindStr_y_ocn_A(i,j) + &
-             G%areaT(i,j+1)*ice_free(i,j+1)*WindStr_y_ocn_A(i,j+1)) * I_wts
-      else
-        WindStr_y_ocn_Cv(i,J) = 0.0
-      endif
-    enddo ; enddo
-  endif
+    weights = (G%areaT(i,j)*ice_free(i,j) + G%areaT(i,j+1)*ice_free(i,j+1))
+    if (G%mask2dCv(i,J) * weights > 0.0) then ; I_wts = 1.0 / weights
+      WindStr_y_ocn_Cv(i,J) = G%mask2dCv(i,J) * &
+          (G%areaT(i,j) * ice_free(i,j) * WindStr_y_ocn_A(i,j) + &
+           G%areaT(i,j+1)*ice_free(i,j+1)*WindStr_y_ocn_A(i,j+1)) * I_wts
+    else
+      WindStr_y_ocn_Cv(i,J) = 0.0
+    endif
+  enddo ; enddo
   !$OMP end parallel
+
+  l_seg = 0 ! Just for setting a breakpoint
 
 end subroutine set_wind_stresses_C
 

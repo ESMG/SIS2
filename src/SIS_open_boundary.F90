@@ -44,19 +44,15 @@ integer, parameter         :: MAX_OBC_FIELDS = 100  !< Maximum number of data fi
 type, public :: ice_OBC_segment_data_type
   integer :: fid                            !< handle from FMS associated with segment data on disk
   character(len=8)                :: name   !< a name identifier for the segment data
-  real, allocatable :: buffer_src(:,:)      !< buffer for segment data located at cell faces
-                                            !! and on the original vertical grid
-  integer                       :: nk_i_src !< Number of vertical levels in the source data
-  integer                       :: ncat_src !< Number of categories in the source data
-! real, allocatable :: dz_src(:,:,:,:)      !< vertical grid cell spacing of the incoming segment
-!                                           !! data, set in [Z ~> m]
-!                                           !then scaled to [H ~> m or !kg m-2]
-! real, allocatable :: buffer_dst(:,:)      !< buffer src data remapped to the target vertical grid
+  real, allocatable :: buffer_src(:,:,:)    !< buffer for segment data located at cell faces
+  integer                         :: nk_src !< Number of vertical levels in the source data
+  real, allocatable :: dz_src(:,:,:)        !< vertical grid cell spacing of the incoming segment
+                                            !! data, set in [Z ~> m]
+  real, allocatable :: buffer_dst(:,:,:)    !< buffer src data remapped to the target vertical grid
   real              :: value                !< constant value if fid is equal to -1
 end type ice_OBC_segment_data_type
 
-!> Tracer on OBC segment data structure, for putting into a segment
-!tracer registry.
+!> Tracer on OBC segment data structure, for putting into a segment tracer registry.
 type, public :: ice_OBC_segment_tracer_type
   real, allocatable          :: t(:,:,:)              !< tracer concentration array
   real                       :: OBC_inflow_conc = 0.0 !< tracer concentration for generic inflows
@@ -463,8 +459,7 @@ subroutine ice_open_boundary_config(G, US, param_file, OBC)
        "Symmetric memory must be used when using Flather OBCs.")
 
   if (.not.(OBC%specified_u_BCs_exist_globally .or. OBC%specified_v_BCs_exist_globally .or. &
-            OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally .or. &
-            OBC%specified_sigma_BCs_exist_globally)) then
+            OBC%open_u_BCs_exist_globally .or. OBC%open_v_BCs_exist_globally)) then
     ! No open boundaries have been requested
     call ice_open_boundary_dealloc(OBC)
   endif

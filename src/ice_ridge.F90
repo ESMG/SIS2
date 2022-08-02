@@ -437,8 +437,9 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
             write(mesg,'("Negative ice volume after ridging: ", i6, i6, 2x, 1pe12.4, 1pe12.4)')  &
                           i+G%idg_offset, j+G%jdg_offset, aicen(k), vicen(k)
             call SIS_error(WARNING, mesg, all_print=.true.)
+            vicen(k) = 0.0
+            vsnon(k) = 0.0
           endif
-          vicen(k) = max(vicen(k),0.0)
         enddo
 !       write(mesg,'("Negative ice volume after ridging: ", 2i6, 2x, (1pe12.4))') &
 !                     i+G%jdg_offset, j+G%jdg_offset, aicen, vicen

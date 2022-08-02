@@ -44,10 +44,14 @@ integer, parameter         :: MAX_OBC_FIELDS = 100  !< Maximum number of data fi
 type, public :: ice_OBC_segment_data_type
   integer :: fid                            !< handle from FMS associated with segment data on disk
   character(len=8)                :: name   !< a name identifier for the segment data
-  real, allocatable :: buffer_src(:,:,:)    !< buffer for segment data located at cell faces
-  integer                         :: nk_src !< Number of vertical levels in the source data
-  real, allocatable :: dz_src(:,:,:)        !< vertical grid cell spacing of the incoming segment
-                                            !! data, set in [Z ~> m]
+  real, allocatable :: buffer_src(:,:)      !< buffer for segment data located at cell faces
+                                            !! and on the original vertical grid
+  integer                       :: nk_i_src !< Number of vertical levels in the source data
+  integer                       :: ncat_src !< Number of categories in the source data
+! real, allocatable :: buffer_src(:,:,:)    !< buffer for segment data located at cell faces
+! integer                         :: nk_src !< Number of vertical levels in the source data
+! real, allocatable :: dz_src(:,:,:)        !< vertical grid cell spacing of the incoming segment
+!                                           !! data, set in [Z ~> m]
   real, allocatable :: buffer_dst(:,:,:)    !< buffer src data remapped to the target vertical grid
   real              :: value                !< constant value if fid is equal to -1
 end type ice_OBC_segment_data_type

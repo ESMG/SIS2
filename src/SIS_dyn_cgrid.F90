@@ -1975,9 +1975,9 @@ subroutine basal_stress_coeff_itd(G, IG, IST, sea_lev, CS)
 
         ! parameters for the log-normal
         mu_i    = log(m_i/(CS%onemeter * sqrt(1.0 + v_i/m_i**2)))
-        sigma_i = 0.0
+        sigma_i = CS%puny
         if (v_i > 0.0) then
-          sigma_i = max(sqrt(log(1.0 + v_i/m_i**2)), CS%puny)
+          sigma_i = max(sqrt(log(1.0 + v_i/m_i**2)), sigma_i)
         endif
 
         ! max thickness associated with percentile of log-normal PDF
@@ -1997,7 +1997,6 @@ subroutine basal_stress_coeff_itd(G, IG, IST, sea_lev, CS)
         enddo
         x_kmax = min(cut, x_kmax)
 
-        sigma_i = max(sigma_i, CS%puny)
         g_k(:) = exp(-(log(x_k(:)/CS%onemeter) - mu_i) ** 2 / (2.0 * sigma_i ** 2)) / &
                  (x_k(:) * sigma_i * sqrt(2.0 * pi))
 

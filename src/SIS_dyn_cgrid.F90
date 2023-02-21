@@ -336,7 +336,7 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
                  units="m s-1", default=5.e-5, scale=US%m_s_to_L_T)
     call get_param(param_file, mdl, "H_ADJ_FILE", hadj_file, &
                  "The path to the file containing an adjustment to "//&
-                 "the bottom depth for the landfast ice.")
+                 "the bottom depth for the landfast ice.", default="")
     call get_param(param_file, mdl, "ADJUST_DEPTH", CS%adjust_depth, &
                  "If true, read in a depth adjustment for landfast ice.", default=.false.)
 

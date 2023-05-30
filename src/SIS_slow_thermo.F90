@@ -113,6 +113,8 @@ type slow_thermo_CS ; private
                             !! spatially varying rate as a form of outflow open boundary condition.
   real, allocatable, dimension(:,:) :: transmutation_rate  !< A spatially varying rate with which
                             !! sea ice and snow are converted into sea-water [T-1 ~> s-1]
+  logical :: do_brine_plume !< If true, separate some heat and salt fluxes into separate
+                            !! variables for an ocean brine plume parameterization.
 
   logical :: debug          !< If true, write verbose checksums for debugging purposes.
   logical :: column_check   !< If true, enable the heat check column by column.
@@ -1525,6 +1527,9 @@ subroutine SIS_slow_thermo_init(Time, G, US, IG, param_file, diag, CS, tracer_fl
 
   endif
 
+  call get_param(param_file, mdl, "DO_BRINE_PLUME", CS%do_brine_plume, &
+                 "If true, split heat and salt fluxes to the ocean into brine "//&
+                 "plumes and other.", default=.false.)
   call get_param(param_file, mdl, "DEBUG", debug, &
                  "If true, write out verbose debugging data.", &
                  default=.false., debuggingParam=.true.)

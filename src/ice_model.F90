@@ -1718,6 +1718,8 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                               ! after a restart.Provide a switch to turn this option off.
   logical :: recategorize_ice ! If true, adjust the distribution of the ice among thickness
                               ! categories after initialization.
+  logical :: do_brine_plume   ! If true, keep track of how much salt is left in the ocean
+                              ! during ice formation.
   logical :: Verona
   logical :: Concurrent
   logical :: read_aux_restart
@@ -1947,7 +1949,10 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                  "If true, allow ice to be transmuted directly into seawater with a spatially "//&
                  "varying rate as a form of outflow open boundary condition.", &
                  default=.false., do_not_log=.true.) ! Defer logging to SIS_slow_thermo.
-
+  call get_param(param_file, mdl, "DO_BRINE_PLUME", do_brine_plume, &
+                 "If true, keep track of the salt left in the ocean during "//&
+                 "ice formation.", default=.false., &
+                 do_not_log=.true.) ! Defer logging to SIS_slow_thermo.
 
   nCat_dflt = 5 ; if (slab_ice) nCat_dflt = 1
   opm_dflt = 0.0 ; if (redo_fast_update) opm_dflt = 1.0e-40
@@ -1999,6 +2004,7 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
     Ice%sCS%redo_fast_update = redo_fast_update
     Ice%sCS%bounds_check = bounds_check
     Ice%sCS%debug = debug_slow
+    Ice%sCS%do_brine_plume = do_brine_plume
 
     ! Set up the ice-specific grid describing categories and ice layers.
     call set_ice_grid(sIG, US, param_file, nCat_dflt, ocean_part_min_dflt=opm_dflt)

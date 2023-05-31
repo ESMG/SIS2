@@ -316,14 +316,14 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
                  "If true, turn on Lemieux landfast ice parameterization.", default=.false.)
   if (CS%lemieux_landfast) then
     call get_param(param_file, mdl, "LEMIEUX_K1", CS%lemieux_k1, &
-                 "The value of the first Lemieux landfast ice tuneable parameter.", &
-                 units="Nondim", default=8.0)
+                   "The value of the first Lemieux landfast ice tuneable parameter.", &
+                   units="Nondim", default=8.0)
     call get_param(param_file, mdl, "LEMIEUX_K2", CS%lemieux_k2, &
-                 "The value of the second Lemieux landfast ice tuneable parameter.", &
-                 units="N m-3", default=15.0, scale=US%kg_m3_to_R*US%m_s_to_L_T*US%T_to_s)
+                   "The value of the second Lemieux landfast ice tuneable parameter.", &
+                   units="N m-3", default=15.0, scale=US%kg_m3_to_R*US%m_s_to_L_T*US%T_to_s)
     call get_param(param_file, mdl, "LEMIEUX_THRESHOLD_HW", CS%lemieux_threshold_hw, &
-                 "Maximum water depth for grounding in Lemieux landfast ice.", &
-                 units="m", default=30.0, scale=US%m_to_Z)
+                   "Maximum water depth for grounding in Lemieux landfast ice.", &
+                   units="m", default=30.0, scale=US%m_to_Z)
   endif
   call get_param(param_file, mdl, "ITD_LANDFAST", CS%itd_landfast, &
                  "If true, turn on probabilistic landfast ice parameterization.", default=.false.)

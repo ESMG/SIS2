@@ -330,61 +330,61 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
 
   if (CS%lemieux_landfast .or. CS%itd_landfast) then
     call get_param(param_file, mdl, "LEMIEUX_ALPHA_B", CS%lemieux_alphab, &
-                 "The value of a third Lemieux landfast ice tuneable parameter.", &
-                 units="Nondim", default=20.0)
+                   "The value of a third Lemieux landfast ice tuneable parameter.", &
+                   units="Nondim", default=20.0)
     call get_param(param_file, mdl, "LEMIEUX_U0", CS%lemieux_u0, &
-                 "Velocity for Lemieux landfast ice.", &
-                 units="m s-1", default=5.e-5, scale=US%m_s_to_L_T)
+                   "Velocity for Lemieux landfast ice.", &
+                   units="m s-1", default=5.e-5, scale=US%m_s_to_L_T)
     call get_param(param_file, mdl, "H_ADJ_FILE", hadj_file, &
-                 "The path to the file containing an adjustment to "//&
-                 "the bottom depth for the landfast ice.", default="")
+                   "The path to the file containing an adjustment to "//&
+                   "the bottom depth for the landfast ice.", default="")
     call get_param(param_file, mdl, "ADJUST_DEPTH", CS%adjust_depth, &
-                 "If true, read in a depth adjustment for landfast ice.", default=.false.)
+                   "If true, read in a depth adjustment for landfast ice.", default=.false.)
 
     allocate(CS%Tb_u(G%IsdB:G%IedB,G%jsd:G%jed), source=0.0)
     allocate(CS%Tb_v(G%isd:G%ied,G%JsdB:G%JedB), source=0.0)
   endif
   if (CS%itd_landfast) then
     call get_param(param_file, mdl, "BASAL_STRESS_MIN_THICK", CS%basal_stress_min_thick, &
-                 "Minimum ice thickness for grounding in ITD landfast ice.", &
-                 units="m", default=0.01, scale=US%m_to_Z)
+                   "Minimum ice thickness for grounding in ITD landfast ice.", &
+                   units="m", default=0.01, scale=US%m_to_Z)
     call get_param(param_file, mdl, "BASAL_STRESS_MAX_DEPTH", CS%basal_stress_max_depth, &
-                 "Maximum water depth for grounding in ITD landfast ice.", &
-                 units="m", default=50.0, scale=US%m_to_Z)
+                   "Maximum water depth for grounding in ITD landfast ice.", &
+                   units="m", default=50.0, scale=US%m_to_Z)
     call get_param(param_file, mdl, "BASAL_STRESS_MU_S", CS%basal_stress_mu_s, &
-                 "Drag coefficient in ITD landfast ice.", &
-                 units="nondim", default=0.1, scale=US%L_to_Z)
+                   "Drag coefficient in ITD landfast ice.", &
+                   units="nondim", default=0.1, scale=US%L_to_Z)
     call get_param(param_file, mdl, "BASAL_STRESS_PUNY", CS%puny, &
-                 "Small number in ITD landfast ice.", &
-                 units="nondim", default=1.0e-20)
+                   "Small number in ITD landfast ice.", &
+                   units="nondim", default=1.0e-20)
     call get_param(param_file, mdl, "BASAL_STRESS_SCALE", CS%onemeter, &
-                 "Scale factor in ITD landfast ice.", &
-                 units="m", default=1.0, scale=US%m_to_Z)
+                   "Scale factor in ITD landfast ice.", &
+                   units="m", default=1.0, scale=US%m_to_Z)
     call get_param(param_file, mdl, "BASAL_STRESS_CUTOFF", CS%basal_stress_cutoff, &
-                 "Scale factor in ITD landfast ice.", &
-                 units="nondim", default=1.9430)
+                   "Scale factor in ITD landfast ice.", &
+                   units="nondim", default=1.9430)
     call get_param(param_file, mdl, "H2_FILE", h2_file, &
-                 "The path to the file containing the sub-grid-scale "//&
-                 "topographic roughness amplitude with ITD_LANDFAST.", &
-                 fail_if_missing=.true.)
+                   "The path to the file containing the sub-grid-scale "//&
+                   "topographic roughness amplitude with ITD_LANDFAST.", &
+                   fail_if_missing=.true.)
     call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
     filename = trim(inputdir) // "/" // trim(h2_file)
     allocate(CS%sigma_b(G%isd:G%ied,G%jsd:G%jed), source=0.0)
     call MOM_read_data(filename, 'h2', CS%sigma_b, G%domain, scale=US%m_to_Z**2)
     call get_param(param_file, mdl, "BATHY_ROUGHNESS_MIN", CS%bathy_roughness_min, &
-                 "Minimum bathymetric roughness.", &
-                 units="m", default=2.5, scale=US%m_to_Z)
+                   "Minimum bathymetric roughness.", &
+                   units="m", default=2.5, scale=US%m_to_Z)
     call get_param(param_file, mdl, "BATHY_ROUGHNESS_MAX", CS%bathy_roughness_max, &
-                 "Maximum bathymetric roughness.", &
-                 units="m", default=2.5, scale=US%m_to_Z)
+                   "Maximum bathymetric roughness.", &
+                   units="m", default=2.5, scale=US%m_to_Z)
     CS%sigma_b(:,:) = min(max(sqrt(CS%sigma_b(:,:)), CS%bathy_roughness_min), CS%bathy_roughness_max)
     call pass_var(CS%sigma_b, G%Domain)
     call get_param(param_file, mdl, "BASAL_STRESS_NCAT_B", CS%ncat_b, &
-                 "Number of bathymetric depth categories in landfast ice computation.", &
-                 default=100)
+                   "Number of bathymetric depth categories in landfast ice computation.", &
+                   default=100)
     call get_param(param_file, mdl, "BASAL_STRESS_NCAT_I", CS%ncat_i, &
-                 "Number of ice thickness categories in landfast ice computation.", &
-                 default=100)
+                   "Number of ice thickness categories in landfast ice computation.", &
+                   default=100)
   endif
   if (CS%adjust_depth) then
     call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
@@ -752,6 +752,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
   real :: m_neglect2 ! A tiny mass per unit area squared [R2 Z2 ~> kg2 m-4].
   real :: m_neglect4 ! A tiny mass per unit area to the 4th power [R4 Z4 ~> kg4 m-8].
   real :: sum_area   ! The sum of ocean areas around a vorticity point [L2 ~> m2].
+  real :: half_pi    ! pi/2.
 
   type(time_type) :: &
     time_it_start, &  ! The starting time of the iterative steps.
@@ -761,8 +762,6 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
   logical :: do_hifreq_output  ! If true, output occurs every iterative step.
   logical :: do_trunc_its  ! If true, overly large velocities in the iterations are truncated.
   integer :: halo_sh_Ds  ! The halo size that can be used in calculating sh_Ds.
-  real :: shear       ! The horizontal shearing strain (du/dy + dv/dx)
-                      ! including all metric terms at h points [T-1 ~> s-1].
   integer :: i, j, isc, iec, jsc, jec, n
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
@@ -773,6 +772,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
          "SIS_C_dynamics is written to require a 2-point halo or 1-point and symmetric memory.")
 
   halo_sh_Ds = min(isc-G%isd, jsc-G%jsd, 2)
+  half_pi = 2 * atan(1.0)
 
   ! Zero these arrays to accumulate sums.
   fxoc(:,:) = 0.0 ; fyoc(:,:) = 0.0
@@ -1081,12 +1081,14 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     do j=jsc-1,jec+1 ; do i=isc-1,iec+1
       ! Averaging the squared shearing strain is larger than squaring
       ! the averaged strain.  I don't know what is better. -RWH
-      shear = 0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
-                      (sh_Ds(I-1,J) + sh_Ds(I,J-1)))
       del_sh(i,j) = sqrt(sh_Dd(i,j)**2 + I_EC2 * (sh_Dt(i,j)**2 + &
-                            shear**2 ) ) ! H&D eqn 9
-      if (CS%id_itheta > 0 .and. shear /= 0.0) then
-        itheta(i,j) = atan( sh_Dd(I,J) / abs(shear) )
+                   (0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
+                            (sh_Ds(I-1,J) + sh_Ds(I,J-1))))**2 ) ) ! H&D eqn 9
+      if (CS%id_itheta > 0 .and. sh_Dd(i,j) /= 0.0) then
+        itheta(i,j) = atan( 0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
+                                    (sh_Ds(I-1,J) + sh_Ds(I,J-1))) &
+                                     / abs(sh_Dd(i,j)) )
+        if (itheta(i,j) < 0.0) itheta(i,j) = itheta(i,j) + half_pi
       endif
 
       if (max(del_sh(i,j), del_sh_min_pr(i,j)*pres_mice(i,j)) /= 0.) then

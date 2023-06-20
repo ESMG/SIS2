@@ -620,6 +620,12 @@ subroutine set_ocean_top_fluxes(Ice, IST, IOF, FIA, OSS, G, US, IG, sCS)
       Ice%lprec(i2,j2) = Ice%lprec(i2,j2) + US%RZ_T_to_kg_m2s*IOF%melt_nudge(i,j)
     enddo ; enddo
   endif
+  if (allocated(IOF%salt_left_behind)) then
+    do j=jsc,jec ; do i=isc,iec
+      i2 = i+i_off ; j2 = j+j_off! Use these to correct for indexing differences.
+      Ice%salt_left_behind(i2,j2) = US%RZ_T_to_kg_m2s*IOF%salt_left_behind(i,j)
+    enddo ; enddo
+  endif
 
   ! This copy may need to be skipped in the first step of a cold-start run with lagged ice
   ! coupling, but otherwise if it is skipped may indicate a problem that should be trapped.
@@ -2067,7 +2073,8 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
     call alloc_simple_OSS(Ice%sCS%sOSS, sHI, gas_fields_ocn)
 
     call alloc_ice_ocean_flux(Ice%sCS%IOF, sHI, do_stress_mag=Ice%sCS%pass_stress_mag, &
-                              do_iceberg_fields=Ice%sCS%do_icebergs, do_transmute=transmute_ice)
+                              do_iceberg_fields=Ice%sCS%do_icebergs, do_transmute=transmute_ice, &
+                              do_brine_plume=Ice%sCS%do_brine_plume)
     Ice%sCS%IOF%slp2ocean = slp2ocean
     Ice%sCS%IOF%flux_uv_stagger = Ice%flux_uv_stagger
     call alloc_fast_ice_avg(Ice%sCS%FIA, sHI, sIG, interp_fluxes, gas_fluxes)

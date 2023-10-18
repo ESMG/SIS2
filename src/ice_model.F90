@@ -1724,6 +1724,10 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                               ! after a restart.Provide a switch to turn this option off.
   logical :: recategorize_ice ! If true, adjust the distribution of the ice among thickness
                               ! categories after initialization.
+  logical :: read_hlim_vals   ! If true, read the list of ice thickness lower limits
+                              ! from an input file.
+  real,  allocatable, dimension(:) :: &
+    hlim_vals                 ! List of lower limits on ice thickness categories.
   logical :: do_brine_plume   ! If true, keep track of how much salt is left in the ocean
                               ! during ice formation.
   logical :: Verona
@@ -1957,6 +1961,9 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                  "If true, allow ice to be transmuted directly into seawater with a spatially "//&
                  "varying rate as a form of outflow open boundary condition.", &
                  default=.false., do_not_log=.true.) ! Defer logging to SIS_slow_thermo.
+  call get_param(param_file, mdl, "READ_HLIM_VALS", read_hlim_vals, &
+                 "If true, read the lower limits on the ice thickness"//&
+                 "categories.", default=.false.)
   call get_param(param_file, mdl, "DO_BRINE_PLUME", do_brine_plume, &
                  "If true, keep track of the salt left in the ocean during "//&
                  "ice formation.", default=.false., &

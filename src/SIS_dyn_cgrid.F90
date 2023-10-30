@@ -138,7 +138,7 @@ type, public :: SIS_C_dyn_CS ; private
                                                 !! [R Z L T-2 -> kg m-1 s-2]
   real, pointer, dimension(:,:) :: Tb_v=>NULL() !< Basal stress component at v-points
                                                 !! [R Z L T-2 -> kg m-1 s-2]
-  real, pointer, dimension(:,:) :: sigma_b=>NULL()    !< !< Bottom depth variance [Z ~> m].
+  real, pointer, dimension(:,:) :: sigma_b=>NULL() !< Bottom depth variance [Z ~> m].
 
   logical :: FirstCall = .true. !< If true, this module has not been called before
   !>@{ Diagnostic IDs

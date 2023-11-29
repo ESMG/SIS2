@@ -159,6 +159,7 @@ type, public :: SIS_C_dyn_CS ; private
   integer :: id_sigi_hifreq = -1, id_sigii_hifreq = -1
   integer :: id_stren_hifreq = -1, id_ci_hifreq = -1
   integer :: id_siu = -1, id_siv = -1, id_sispeed = -1 ! SIMIP diagnostics
+  integer :: id_itheta = -1
   !!@}
 end type SIS_C_dyn_CS
 
@@ -515,6 +516,8 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
             'ice strain rate magnitude', 's-1', conversion=US%s_to_T, missing_value=missing)
   CS%id_del_sh_min = register_diag_field('ice_model', 'del_sh_min', diag%axesT1, Time, &
             'minimum ice strain rate magnitude', 's-1', conversion=US%s_to_T, missing_value=missing)
+  CS%id_itheta = register_diag_field('ice_model', 'itheta', diag%axesT1, Time, &
+            'ice atan(shear/divergence)', 'rad', missing_value=missing)
 
   CS%id_ui_hifreq = register_diag_field('ice_model', 'ui_hf', diag%axesCu1, Time, &
             'ice velocity - x component', 'm/s', missing_value=missing,        &
@@ -629,7 +632,8 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                 ! and varies with the grid spacing.
     dx2T, dy2T, &   ! dx^2 or dy^2 at T points [L2 ~> m2].
     dx_dyT, dy_dxT, &  ! dx/dy or dy_dx at T points [nondim].
-    siu, siv, sispeed  ! diagnostics on T points [L T-1 ~> m s-1].
+    siu, siv, sispeed, & ! diagnostics on T points [L T-1 ~> m s-1].
+    itheta      ! Angle given by atan(shear/divergence)
 
   real, dimension(SZIB_(G),SZJ_(G)) :: &
     fxic, &   ! Zonal force due to internal stresses [R Z L T-2 ~> Pa].
@@ -735,6 +739,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
   real :: m_neglect2 ! A tiny mass per unit area squared [R2 Z2 ~> kg2 m-4].
   real :: m_neglect4 ! A tiny mass per unit area to the 4th power [R4 Z4 ~> kg4 m-8].
   real :: sum_area   ! The sum of ocean areas around a vorticity point [L2 ~> m2].
+  real :: half_pi    ! pi/2.
 
   type(time_type) :: &
     time_it_start, &  ! The starting time of the iterative steps.
@@ -754,6 +759,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
          "SIS_C_dynamics is written to require a 2-point halo or 1-point and symmetric memory.")
 
   halo_sh_Ds = min(isc-G%isd, jsc-G%jsd, 2)
+  half_pi = 2 * atan(1.0)
 
   ! Zero these arrays to accumulate sums.
   fxoc(:,:) = 0.0 ; fyoc(:,:) = 0.0
@@ -1052,13 +1058,25 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
 
    ! calculate viscosities - how often should we do this ?
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,del_sh,zeta,sh_Dd,sh_Dt, &
-!$OMP                                  I_EC2,sh_Ds,pres_mice,mice,del_sh_min_pr)
+!$OMP                                  I_EC2,sh_Ds,pres_mice,mice,del_sh_min_pr, &
+!$OMP                                  itheta)
+    if (CS%id_itheta > 0) then
+      do j=jsc-1,jec+1 ; do i=isc-1,iec+1
+        itheta(i,j) = 0.0
+      enddo ; enddo
+    endif
     do j=jsc-1,jec+1 ; do i=isc-1,iec+1
       ! Averaging the squared shearing strain is larger than squaring
       ! the averaged strain.  I don't know what is better. -RWH
       del_sh(i,j) = sqrt(sh_Dd(i,j)**2 + I_EC2 * (sh_Dt(i,j)**2 + &
                    (0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
                             (sh_Ds(I-1,J) + sh_Ds(I,J-1))))**2 ) ) ! H&D eqn 9
+      if (CS%id_itheta > 0 .and. IST%part_size(i,j,0) < 1.0 .and. sh_Dd(i,j) /= 0.0) then
+        itheta(i,j) = atan( 0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
+                                    (sh_Ds(I-1,J) + sh_Ds(I,J-1))) &
+                                     / abs(sh_Dd(i,j)) )
+        if (itheta(i,j) < 0.0) itheta(i,j) = itheta(i,j) + half_pi
+      endif
 
       if (max(del_sh(i,j), del_sh_min_pr(i,j)*pres_mice(i,j)) /= 0.) then
         zeta(i,j) = 0.5*pres_mice(i,j)*mice(i,j) / &
@@ -1534,6 +1552,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     if (CS%id_sh_s>0) call post_SIS_data(CS%id_sh_s, sh_Ds, CS%diag)
 
     if (CS%id_del_sh>0) call post_SIS_data(CS%id_del_sh, del_sh, CS%diag)
+    if (CS%id_itheta>0) call post_SIS_data(CS%id_itheta, itheta, CS%diag)
     if (CS%id_del_sh_min>0) then
       do j=jsc,jec ; do i=isc,iec
         diag_val(i,j) = del_sh_min_pr(i,j)*pres_mice(i,j)

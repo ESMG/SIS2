@@ -1071,7 +1071,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
       del_sh(i,j) = sqrt(sh_Dd(i,j)**2 + I_EC2 * (sh_Dt(i,j)**2 + &
                    (0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
                             (sh_Ds(I-1,J) + sh_Ds(I,J-1))))**2 ) ) ! H&D eqn 9
-      if (CS%id_itheta > 0 .and. IST%part_size(i,j,0) < 1.0 .and. sh_Dd(i,j) /= 0.0) then
+      if (CS%id_itheta > 0 .and. ci(i,j) > 0.0 .and. sh_Dd(i,j) /= 0.0) then
         itheta(i,j) = atan( 0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
                                     (sh_Ds(I-1,J) + sh_Ds(I,J-1))) &
                                      / abs(sh_Dd(i,j)) )

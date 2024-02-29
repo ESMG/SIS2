@@ -1650,7 +1650,7 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, limit
   enddo ; enddo
 
 !    This commented out version seems to work, but is not obviously better than
-! treating each component separately, and the later is simpler.
+! treating each component separately, and the latter is simpler.
 !  EC2 = CS%EC**2
 !  do J=jsc-1,jec ; do I=isc-1,iec
 !    ! Rescale str_s based on interpolated values of str_d and str_t, which works

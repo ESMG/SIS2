@@ -344,7 +344,7 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
 
       aice0 = IST%part_size(i,j,0)
       if (aice0<0.) then
-         call SIS_error(WARNING,'aice0<0. before call to ridge ice.')
+!        call SIS_error(WARNING,'aice0<0. before call to ridge ice.')
          aice0=0.
       endif
       aice = 1.0 - aice0

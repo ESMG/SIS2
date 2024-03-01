@@ -133,6 +133,7 @@ type, public :: SIS_C_dyn_CS ; private
   real :: basal_stress_cutoff !< tunable parameter for the bottom drag [nondim]
   integer :: ncat_b           !< number of bathymetry categories
   integer :: ncat_i           !< number of ice thickness categories (log-normal)
+  logical :: teardrop         !< If true, use a teardrop yield curve instead of default ellipse.
 
   real, pointer, dimension(:,:) :: Tb_u=>NULL() !< Basal stress component at u-points
                                                 !! [R Z L T-2 -> kg m-1 s-2]
@@ -310,6 +311,8 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
   call get_param(param_file, mdl, "MAX_TRUNC_FILE_SIZE_PER_PE", CS%max_writes, &
                  "The maximum number of colums of truncations that any PE "//&
                  "will write out during a run.", default=50, debuggingParam=.true.)
+  call get_param(param_file, mdl, "TEARDROP_YIELD_CURVE", CS%teardrop, &
+                 "If true, use teardrop yield curve instead of ellipse.", default=.false.)
   call get_param(param_file, mdl, "LEMIEUX_LANDFAST", CS%lemieux_landfast, &
                  "If true, turn on Lemieux landfast ice parameterization.", default=.false.)
   if (CS%lemieux_landfast) then
@@ -624,6 +627,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     pres_mice, & ! The ice internal pressure per unit column mass [L2 T-2 ~> N m kg-1].
     ci_proj, &  ! The projected ice concentration [nondim].
     zeta, &     ! The ice bulk viscosity [R Z L2 T-1 ~> Pa m s] (i.e., [N s m-1]).
+    eta, &      ! The ice shear viscosity [R Z L2 T-1 ~> Pa m s] (i.e., [N s m-1]).
     del_sh, &   ! The magnitude of the shear rates [T-1 ~> s-1].
     diag_val, & ! A temporary diagnostic array.
     del_sh_min_pr, &  ! When multiplied by pres_mice, this gives the minimum
@@ -633,7 +637,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     dx2T, dy2T, &   ! dx^2 or dy^2 at T points [L2 ~> m2].
     dx_dyT, dy_dxT, &  ! dx/dy or dy_dx at T points [nondim].
     siu, siv, sispeed, & ! diagnostics on T points [L T-1 ~> m s-1].
-    itheta      ! Angle given by atan(shear/divergence)
+    itheta      ! Angle given by atan(rotation/divergence)
 
   real, dimension(SZIB_(G),SZJ_(G)) :: &
     fxic, &   ! Zonal force due to internal stresses [R Z L T-2 ~> Pa].
@@ -700,7 +704,6 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                       ! to a vorticity point on the coast [R Z ~> kg m-2].
   real :: min_rescale ! The smallest of the 4 surrounding values of rescale [nondim].
   real :: I_1pdt_T    ! 1.0 / (1.0 + dt_2Tdamp) [nondim].
-  real :: I_1pE2dt_T  ! 1.0 / (1.0 + EC^2 * dt_2Tdamp) [nondim].
 
   real :: v2_at_u     ! The squared v-velocity interpolated to u points [L2 T-2 ~> m2 s-2].
   real :: u2_at_v     ! The squared u-velocity interpolated to v points [L2 T-2 ~> m2 s-2].
@@ -1057,7 +1060,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
    endif
 
    ! calculate viscosities - how often should we do this ?
-!$OMP parallel do default(none) shared(isc,iec,jsc,jec,del_sh,zeta,sh_Dd,sh_Dt, &
+!$OMP parallel do default(none) shared(isc,iec,jsc,jec,del_sh,zeta,eta,sh_Dd,sh_Dt, &
 !$OMP                                  I_EC2,sh_Ds,pres_mice,mice,del_sh_min_pr, &
 !$OMP                                  itheta)
     if (CS%id_itheta > 0) then
@@ -1072,51 +1075,66 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                    (0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
                             (sh_Ds(I-1,J) + sh_Ds(I,J-1))))**2 ) ) ! H&D eqn 9
       if (CS%id_itheta > 0 .and. sh_Dd(i,j) /= 0.0) then
-        itheta(i,j) = atan( 0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
-                                    (sh_Ds(I-1,J) + sh_Ds(I,J-1))) &
-                                     / abs(sh_Dd(i,j)) )
+!       itheta(i,j) = atan( 0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
+!                                   (sh_Ds(I-1,J) + sh_Ds(I,J-1))) &
+        itheta(i,j) = atan( 0.25 * (sh_Dt(i,j) / abs(sh_Dd(i,j)) ))
         if (itheta(i,j) < 0.0) itheta(i,j) = itheta(i,j) + half_pi
       endif
 
-      if (max(del_sh(i,j), del_sh_min_pr(i,j)*pres_mice(i,j)) /= 0.) then
-        zeta(i,j) = 0.5*pres_mice(i,j)*mice(i,j) / &
-           max(del_sh(i,j), del_sh_min_pr(i,j)*pres_mice(i,j))
+      if (CS%teardrop) then
+        if (sh_Dd(i,j) /= 0.) then
+          zeta(i,j) = 0.5 * (0.5*pres_mice(i,j)*mice(i,j) + CS%str_d(i,j)) / &
+             sh_Dd(i,j)
+        else
+          zeta(i,j) = 0.
+        endif
+        if (sh_Dt(i,j) /= 0.) then
+          eta(i,j) = 0.5 * (CS%str_t(i,j)) / sh_Dt(i,j)
+        else
+          eta(i,j) = 0.
+        endif
       else
-        zeta(i,j) = 0.
+        if (max(del_sh(i,j), del_sh_min_pr(i,j)*pres_mice(i,j)) /= 0.) then
+          zeta(i,j) = 0.5*pres_mice(i,j)*mice(i,j) / &
+             max(del_sh(i,j), del_sh_min_pr(i,j)*pres_mice(i,j))
+          eta(i,j) = zeta(i,j) * I_EC2
+        else
+          zeta(i,j) = 0.
+          eta(i,j) = 0.
+        endif
       endif
     enddo ; enddo
 
     ! Step the stress component equations semi-implicitly.
     I_1pdt_T = 1.0 / (1.0 + dt_2Tdamp)
-    I_1pE2dt_T = 1.0 / (1.0 + EC2*dt_2Tdamp)
     if (CS%weak_low_shear) then
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,CS,I_1pdt_T,dt_2Tdamp,zeta, &
-!$OMP                                  sh_Dd,del_sh,I_EC2,sh_Dt)
+!$OMP                                  eta,sh_Dd,del_sh,sh_Dt)
       do j=jsc-1,jec+1 ; do i=isc-1,iec+1
         ! This expression uses that Pres=2*del_sh*zeta with an elliptic yield curve.
         CS%str_d(i,j) = I_1pdt_T * ( CS%str_d(i,j) + dt_2Tdamp * &
                     ( zeta(i,j) * (sh_Dd(i,j) - del_sh(i,j)) ) )
-        CS%str_t(i,j) = I_1pdt_T * ( CS%str_t(i,j) + (I_EC2 * dt_2Tdamp) * &
-                    ( zeta(i,j) * sh_Dt(i,j) ) )
+        CS%str_t(i,j) = I_1pdt_T * ( CS%str_t(i,j) + dt_2Tdamp * &
+                    ( eta(i,j) * sh_Dt(i,j) ) )
       enddo ; enddo
     else
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,CS,I_1pdt_T,dt_2Tdamp,zeta, &
-!$OMP                                  sh_Dd,I_EC2,sh_Dt,pres_mice,mice)
+!$OMP                                  eta,sh_Dd,sh_Dt,pres_mice,mice)
       do j=jsc-1,jec+1 ; do i=isc-1,iec+1
         ! This expression uses that Pres=2*del_sh*zeta with an elliptic yield curve.
         CS%str_d(i,j) = I_1pdt_T * ( CS%str_d(i,j) + dt_2Tdamp * &
                     ( zeta(i,j) * sh_Dd(i,j) - 0.5*pres_mice(i,j)*mice(i,j) ) )
-        CS%str_t(i,j) = I_1pdt_T * ( CS%str_t(i,j) + (I_EC2 * dt_2Tdamp) * &
-                    ( zeta(i,j) * sh_Dt(i,j) ) )
+        CS%str_t(i,j) = I_1pdt_T * ( CS%str_t(i,j) + dt_2Tdamp * &
+                    ( eta(i,j) * sh_Dt(i,j) ) )
       enddo ; enddo
     endif
-!$OMP parallel do default(none) shared(isc,iec,jsc,jec,CS,I_1pdt_T,I_EC2,dt_2Tdamp, &
-!$OMP                                  G,zeta,mi_ratio_A_q,sh_Ds)
+!$OMP parallel do default(none) shared(isc,iec,jsc,jec,CS,I_1pdt_T,dt_2Tdamp, &
+!$OMP                                  G,eta,mi_ratio_A_q,sh_Ds)
     do J=jsc-1,jec ; do I=isc-1,iec
       ! zeta is already set to 0 over land.
-      CS%str_s(I,J) = I_1pdt_T * ( CS%str_s(I,J) + (I_EC2 * dt_2Tdamp) * &
-                  ( ((G%areaT(i,j)*zeta(i,j) + G%areaT(i+1,j+1)*zeta(i+1,j+1)) + &
-                     (G%areaT(i+1,j)*zeta(i+1,j) + G%areaT(i,j+1)*zeta(i,j+1))) * &
+      CS%str_s(I,J) = I_1pdt_T * ( CS%str_s(I,J) + dt_2Tdamp * &
+                  ( ((G%areaT(i,j)*eta(i,j) + G%areaT(i+1,j+1)*eta(i+1,j+1)) + &
+                     (G%areaT(i+1,j)*eta(i+1,j) + G%areaT(i,j+1)*eta(i,j+1))) * &
                    mi_ratio_A_q(I,J) * sh_Ds(I,J) ) )
     enddo ; enddo
 
@@ -1599,11 +1617,6 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, limit
   real, optional,                     intent(in)    :: limit !< A factor by which the strength limits
                                                              !! are changed [nondim]
 
-!   This subroutine ensures that the input stresses are not larger than could
-! be justified by the ice pressure now, as the ice might have melted or been
-! advected away during the thermodynamic and transport phases, or the
-! ice flow convergence or divergence may have altered the ice concentration.
-
   ! Local variables
   real :: pressure  ! The integrated internal ice pressure at a point [R Z L2 T-2 ~> Pa m].
   real :: pres_avg  ! The average of the internal ice pressures around a point [R Z L2 T-2 ~> Pa m].
@@ -1620,7 +1633,9 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, limit
   integer :: i, j, isc, iec, jsc, jec
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
 
-  lim = 1.0 ; if (present(limit)) lim = limit
+  lim = 1.0
+  if (CS%teardrop) lim = 1.6
+  if (present(limit)) lim = limit
   I_2EC = 0.0 ; if (CS%EC > 0.0) I_2EC = (0.5*lim) / CS%EC
   lim_2 = 0.5 * lim
 

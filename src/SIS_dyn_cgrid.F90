@@ -1637,6 +1637,7 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, limit
   if (CS%teardrop) lim = 1.6
   if (present(limit)) lim = limit
   I_2EC = 0.0 ; if (CS%EC > 0.0) I_2EC = (0.5*lim) / CS%EC
+  if (CS%teardrop) I_2EC = 0.25 * lim
   lim_2 = 0.5 * lim
 
   ! The rescaling here is done separately for each component.

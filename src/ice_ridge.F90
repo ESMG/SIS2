@@ -73,10 +73,10 @@ subroutine ice_ridging_init(G, IG, PF, CS, US)
   if (.not.associated(CS)) allocate(CS)
   call get_param(PF, mdl, "NEW_RIDGE_PARTICIPATION", CS%new_rdg_partic, &
                  "Participation function used in ridging, .false. for Thorndike et al. 1975 "//&
-                 ".true. for Lipscomb et al. 2007", default=.true.)
+                 ".true. for Lipscomb et al. 2007", default=.false.)
   call get_param(PF, mdl, "NEW_RIDGE_REDISTRIBUTION", CS%new_rdg_redist, &
                  "Redistribution function used in ridging, .false. for Hibler 1980 "//&
-                 ".true. for Lipscomb et al. 2007", default=.true.)
+                 ".true. for Lipscomb et al. 2007", default=.false.)
   if (CS%new_rdg_partic) then
     call get_param(PF, mdl, "RIDGE_MU", CS%mu_rdg, &
                    "E-folding scale of ridge ice from Lipscomb et al. 2007", &
@@ -443,7 +443,8 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
                                aice,         fsalt,         &
                                first_ice,    fzsal,         &
                                flux_bio,     closing,       &
-                               Tf)
+                               Tf, call_cleanup_in=.false., &
+                               call_rebin_in=.false.)
 
       if (present(rdg_rate)) rdg_rate(i,j) = (dardg1dt - dardg2dt)*US%T_to_s
       if (present(rdg_height)) rdg_height(i,j,:) = krdgn(:)*US%m_to_Z

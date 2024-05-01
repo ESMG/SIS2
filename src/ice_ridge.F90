@@ -506,10 +506,10 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
 
       ! ! output: snow/ice masses/thicknesses
       do k=1,nCat
-!       if (aicen(k) < CS%area_underflow) then
-!          aicen(k)=0.0
-!          vicen(k)=0.0
-!       endif
+        if (aicen(k) < CS%area_underflow) then
+           aicen(k)=0.0
+           vicen(k)=0.0
+        endif
         if (aicen(k) > 0.0) then
           IST%part_size(i,j,k)  = aicen(k)
           mca_ice(i,j,k)  = vicen(k)*Rho_ice * US%m_to_Z

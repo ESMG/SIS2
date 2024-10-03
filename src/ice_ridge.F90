@@ -423,9 +423,7 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
 
         ! call Icepack routine; how are ponds treated?
         call icepack_step_ridge (dt_sec,       ndtd,          &
-                                 nilyr,        nslyr,         &
-                                 nblyr,                       &
-                                 ncat,         hin_max,       &
+                                 hin_max,                     &
                                  rdg_conv,     rdg_shear,     &
                                  aicen,                       &
                                  trcrn,                       &
@@ -437,7 +435,6 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
                                  dvirdgdt,     opening,       &
                                  fpond,                       &
                                  fresh,        fhocn,         &
-                                 n_aero,                      &
                                  faero_ocn,    fiso_ocn,      &
                                  aparticn,     krdgn,         &
                                  aredistn,     vredistn,      &
@@ -447,8 +444,8 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
                                  aice,         fsalt,         &
                                  first_ice,    fzsal,         &
                                  flux_bio,     closing,       &
-                                 Tf, call_cleanup_in=.false., &
-                                 call_rebin_in=.false.)
+                                 Tf, docleanup=.false.,      &
+                                 dorebin=.false.)
 
         if (present(rdg_rate)) rdg_rate(i,j) = (dardg1dt - dardg2dt)*US%T_to_s
         if (present(rdg_height)) rdg_height(i,j,:) = krdgn(:)*US%m_to_Z

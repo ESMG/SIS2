@@ -12,10 +12,9 @@
 !-----------------------------------------------------------------------
 !> Interface for updating the sea-ice state due to ice ridging processes
 !! using Icepack.
+
       subroutine icepack_step_ridge(dt,           ndtd,          &
-                                    nilyr,        nslyr,         &
-                                    nblyr,                       &
-                                    ncat,         hin_max,       &
+                                    hin_max,                     &
                                     rdg_conv,     rdg_shear,     &
                                     aicen,                       &
                                     trcrn,                       &
@@ -27,7 +26,6 @@
                                     dvirdgdt,     opening,       &
                                     fpond,                       &
                                     fresh,        fhocn,         &
-                                    n_aero,                      &
                                     faero_ocn,    fiso_ocn,      &
                                     aparticn,     krdgn,         &
                                     aredistn,     vredistn,      &
@@ -37,18 +35,14 @@
                                     aice,         fsalt,         &
                                     first_ice,    fzsal,         &
                                     flux_bio,     closing,       &
-                                    Tf)
+                                    Tf, docleanup=.false.,      &
+                                    dorebin=.false.)
 
       real (kind=dbl_kind), intent(in) :: &
          dt        !< The time step over which ridging occurs [s]
 
       integer (kind=int_kind), intent(in) :: &
-         ncat  , & !< The number of thickness categories
-         ndtd  , & !< Thenumber of dynamics subcycles
-         nblyr , & !< The number of bio layers
-         nilyr , & !< The number of ice layers
-         nslyr , & !< The number of snow layers
-         n_aero    !< The number of aerosol tracers
+         ndtd      !< Thenumber of dynamics subcycles
 
       real (kind=dbl_kind), dimension(0:ncat), intent(inout) :: &
          hin_max   !< category limits [m]
@@ -106,15 +100,13 @@
       real (kind=dbl_kind), dimension(:,:), intent(inout) :: &
          trcrn        !< Ice tracer concentrations [kg m-3]
 
-      !logical (kind=log_kind), intent(in) :: &
-         !tr_pond_topo,& ! If .true., use explicit topography-based ponds
-         !tr_aero     ,& ! If .true., use aerosol tracers
-         !tr_brine    ,& ! If .true., brine height differs from ice thickness
-
       logical (kind=log_kind), dimension(:), intent(inout) :: &
          first_ice    !< True until ice forms
       real (kind=dbl_kind), intent(in) :: &
-         Tf           ! freezing temperature
+         Tf           !< freezing temperature
+      logical (kind=log_kind), dimension(:), intent(in), optional :: &
+         docleanup, & !< True to call cleanup_itd in Icepack
+         dorebin      !< True to call rebin in Icepack
 
       end subroutine icepack_step_ridge
 

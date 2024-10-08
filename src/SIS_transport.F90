@@ -70,6 +70,7 @@ type, public :: SIS_transport_CS ; private
 
   !>@{ Diagnostic IDs
   integer :: id_ix_trans = -1, id_iy_trans = -1, id_xprt = -1, id_rdgr = -1
+  integer :: id_rdgh=-1
   ! integer :: id_rdgo=-1, id_rdgv=-1 ! These do not exist yet
   !!@}
 
@@ -391,6 +392,8 @@ subroutine finish_ice_transport(CAS, IST, TrReg, G, US, IG, dt, CS, OSS, rdg_rat
   if (CS%do_ridging) then
     if (CS%id_rdgr>0 .and. present(rdg_rate)) &
       call post_SIS_data(CS%id_rdgr, rdg_rate, CS%diag)
+    if (CS%id_rdgh>0) &
+      call post_SIS_data(CS%id_rdgh, IST%rdg_height, CS%diag)
 !    if (CS%id_rdgo>0) call post_SIS_data(CS%id_rdgo, rdg_open, diag)
 !    if (CS%id_rdgv>0) then
 !      do j=jsc,jec ; do i=isc,iec
@@ -1243,6 +1246,8 @@ subroutine SIS_transport_init(Time, G, IG, US, param_file, diag, CS, continuity_
                missing_value=missing)
   CS%id_rdgr = register_diag_field('ice_model', 'RDG_RATE', diag%axesT1, Time, &
                'ice ridging rate', '1/sec', conversion=US%s_to_T, missing_value=missing)
+  CS%id_rdgh = register_diag_field('ice_model', 'RDG_HEIGHT', diag%axesTc, Time, &
+               'ice ridge height', 'm', conversion=US%m_to_Z, missing_value=missing)
 !### THESE DIAGNOSTICS DO NOT EXIST YET.
 !  CS%id_rdgo = register_diag_field('ice_model', 'RDG_OPEN', diag%axesT1, Time, &
 !               'rate of opening due to ridging', '1/s', conversion=US%s_to_T, missing_value=missing)

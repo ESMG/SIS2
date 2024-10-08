@@ -51,6 +51,7 @@ type, public :: ice_ridging_CS ; private
                                !! ridging scheme. This is defaulted to zero, but a reasonable
                                !! value might be 10^-26 which for a km square grid cell
                                !! would equate to an Angstrom scale ice patch.
+  real :: Cs_frac = 0.25       !< fraction of shear energy contrbtng to ridging
 end type ice_ridging_CS
 
 contains
@@ -289,11 +290,6 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
     hin_max(k) = US%Z_to_m * IG%mH_cat_bound(k) / Rho_ice
   end do
 
-  ! What to put?
-  do k=1,nCat
-    first_ice(k) = .true.
-  end do
-
   trcr_base = 0.0; n_trcr_strata = 0; nt_strata = 0; ! init some tracer vars
   ! When would we use icepack tracer "strata"?
 
@@ -320,14 +316,18 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
       IST%water_to_ocn(i,j) = IST%water_to_ocn(i,j) + sum(mca_pond(i,j,:))
       aicen(1:nCat) = IST%part_size(i,j,1:nCat)
 
-      asum = aice0 + sum(aicen)
-      divu_adv = (1.0 - asum) / dt_sec
-      closing = 0.0
-      if (divu_adv < 0.0) closing = -divu_adv
-
       if (sum(aicen) .eq. 0.0) then ! no ice -> no ridging
         IST%part_size(i,j,0) = 1.0;
       else
+        ! first_ice gets set to true when ice disappears to clear the tracer memory of it
+        do k=1,nCat
+          if (IST%part_size(i,j,k) .gt. 0.0) then
+            first_ice(k) = .false.
+          else
+            first_ice(k) = .true.
+          endif
+        end do
+
         ! set up ice and snow volumes
         vicen(1:nCat) = mca_ice(i,j,1:nCat) /Rho_ice * US%Z_to_m  ! volume per unit area of ice (m)
         vsnon(1:nCat) = mca_snow(i,j,1:nCat)/Rho_snow * US%Z_to_m ! volume per unit area of snow (m)
@@ -347,12 +347,23 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
         rdg_conv  = -min(sh_Dd,0.0)*US%s_to_T              ! energy dissipated by convergence ...
         rdg_shear = 0.5*(del_sh-abs(sh_Dd))*US%s_to_T      ! ... and by shear
 
+        ! This was being done in ridge_prep, now private.
+        asum = aice0 + sum(aicen)
+        divu_adv = (1.0 - asum) / dt_sec
+        closing = CS%Cs_frac * rdg_shear + rdg_conv
+        if (divu_adv < 0.0) closing = max(closing, -divu_adv)
+        opening = closing + divu_adv
+
         aice0 = IST%part_size(i,j,0)
         if (aice0<0.) then
   !        call SIS_error(WARNING,'aice0<0. before call to ridge ice.')
            aice0=0.
         endif
         aice = 1.0 - aice0
+        if ((G%isd_global + i == 40) .and. (G%jsd_global + j == 390)) then
+          print *, 'Inside ridging', opening, closing, asum, aice0, rdg_conv, rdg_shear
+          print *, 'Volume', vicen
+        endif
 
         ntrcr = 0
   !      Tr_ptr=>NULL()
@@ -402,13 +413,13 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
 
         dardg1dt = 0.0
         dardg2dt = 0.0
-        opening = 0.0
         fpond = 0.0
         fresh = 0.0
         fhocn = 0.0
         fsalt = 0.0
         fzsal = 0.0
         faero_ocn(:) = 0.0
+        flux_bio(:) = 0.0
         fiso_ocn = 0.0
         aparticn = 0.0
         krdgn(:) = rdg_height(i,j,:)*US%Z_to_m
@@ -481,6 +492,11 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
   !       call SIS_error(WARNING, mesg, all_print=.true.)
         endif
 
+        if ((G%isd_global + i == 40) .and. (G%jsd_global + j == 390)) then
+          print *, 'After ridging', opening, closing, sum(aicen), aice0, rdg_conv, rdg_shear
+          print *, 'Volume', vicen
+        endif
+
         if (TrReg%ntr>0) then
           ! unload tracer array reversing order of load -- stack-like fashion
 
@@ -524,11 +540,11 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
             IST%mH_ice(i,j,k) = 0.0
             mca_snow(i,j,k) = 0.0
             IST%mH_snow(i,j,k) = 0.0
-         endif
+          endif
 
-       enddo
+        enddo
 
-       IST%part_size(i,j,0) = 1.0 - sum(IST%part_size(i,j,1:nCat))
+        IST%part_size(i,j,0) = 1.0 - sum(IST%part_size(i,j,1:nCat))
 
       endif
       ! subtract new snow/pond mass and energy on ice to sum net fluxes to ocean
@@ -536,8 +552,8 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
       IST%enth_snow_to_ocn(i,j) = IST%enth_snow_to_ocn(i,j) - sum(mca_snow(i,j,:)*TrReg%Tr_snow(1)%t(i,j,:,1));
       IST%water_to_ocn(i,j) = IST%water_to_ocn(i,j) - sum(mca_pond(i,j,:));
 
-    endif
-  enddo; enddo ! part_sz, j, i
+    endif ! part_sz
+  enddo; enddo ! j, i
 
 !  call IST_chksum('after ice ridging ',IST,G,US,IG)
 

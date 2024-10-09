@@ -252,6 +252,7 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
   integer :: nL_ice, nL_snow ! number of tracer levels
   integer :: ncat_out, ntrcr_out, nilyr_out, nslyr_out ! array sizes returned from Icepack query
   character(len=1256) :: mesg
+  real, parameter :: big = 1.0e+8  ! Thicker than the thickest ridges. [m]
 
   nSlyr = IG%NkSnow
   nIlyr = IG%NkIce
@@ -289,6 +290,9 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
   do k=1,nCat
     hin_max(k) = US%Z_to_m * IG%mH_cat_bound(k) / Rho_ice
   end do
+  ! Set hin_max(ncat) to a big value to ensure that all ridged ice
+  ! is thinner than hin_max(ncat).
+  hin_max(nCat) = big
 
   trcr_base = 0.0; n_trcr_strata = 0; nt_strata = 0; ! init some tracer vars
   ! When would we use icepack tracer "strata"?
@@ -348,22 +352,18 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
         rdg_shear = 0.5*(del_sh-abs(sh_Dd))*US%s_to_T      ! ... and by shear
 
         ! This was being done in ridge_prep, now private.
+        aice0 = IST%part_size(i,j,0)
         asum = aice0 + sum(aicen)
         divu_adv = (1.0 - asum) / dt_sec
         closing = CS%Cs_frac * rdg_shear + rdg_conv
         if (divu_adv < 0.0) closing = max(closing, -divu_adv)
         opening = closing + divu_adv
 
-        aice0 = IST%part_size(i,j,0)
         if (aice0<0.) then
   !        call SIS_error(WARNING,'aice0<0. before call to ridge ice.')
            aice0=0.
         endif
         aice = 1.0 - aice0
-        if ((G%isd_global + i == 40) .and. (G%jsd_global + j == 390)) then
-          print *, 'Inside ridging', opening, closing, asum, aice0, rdg_conv, rdg_shear
-          print *, 'Volume', vicen
-        endif
 
         ntrcr = 0
   !      Tr_ptr=>NULL()
@@ -455,8 +455,9 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
                                  aice,         fsalt,         &
                                  first_ice,    fzsal,         &
                                  flux_bio,     closing,       &
-                                 Tf, docleanup=.false.,      &
-                                 dorebin=.false.)
+                                 Tf, docleanup=.false.,       &
+                                 dorebin=.false.,             &
+                                 donoprep=.false.)
 
         if (present(rdg_rate)) rdg_rate(i,j) = (dardg1dt - dardg2dt)*US%T_to_s
         if (present(rdg_height)) rdg_height(i,j,:) = krdgn(:)*US%m_to_Z
@@ -476,9 +477,6 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
         enddo
 
         if (any(vicen < 0)) then
-  !       print *, "Negative ice volume after ridging: ", i+G%idg_offset, j+G%jdg_offset, vicen
-  !       print *, "Before ridging: ", mca_ice(i,j,1:nCat) /Rho_ice
-  !       print *, "Ice concentration before/after ridging: ", IST%part_size(i,j,1:nCat), aicen
           do k=1,nCat
             if (vicen(k) < 0.0 .and. aicen(k) > 0.0) then
               write(mesg,'("Negative ice volume after ridging: ", i6, i6, 2x, 1pe12.4, 1pe12.4)')  &
@@ -490,11 +488,6 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
   !       write(mesg,'("Negative ice volume after ridging: ", 2i6, 2x, (1pe12.4))') &
   !                     i+G%jdg_offset, j+G%jdg_offset, aicen, vicen
   !       call SIS_error(WARNING, mesg, all_print=.true.)
-        endif
-
-        if ((G%isd_global + i == 40) .and. (G%jsd_global + j == 390)) then
-          print *, 'After ridging', opening, closing, sum(aicen), aice0, rdg_conv, rdg_shear
-          print *, 'Volume', vicen
         endif
 
         if (TrReg%ntr>0) then

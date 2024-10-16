@@ -45,7 +45,9 @@ public :: ice_ridging, ice_ridging_init
 type, public :: ice_ridging_CS ; private
   logical :: &
   new_rdg_partic = .false., & !< .true. = new participation, .false. = Thorndike et al 75
-  new_rdg_redist = .false.    !< .true. = new redistribution, .false. = Hibler 80
+  new_rdg_redist = .false., & !< .true. = new redistribution, .false. = Hibler 80
+  do_ridge_prep = .true.      !< .true. = call icepack_step_ridge such that it calls
+                              !! ridge_prep for us.
   real :: mu_rdg = 3.0 !< e-folding scale of ridged ice, new_rdg_partic (m^0.5)
   real :: area_underflow = 0.0 !< a non-dimesional fractional area underflow limit for the sea-ice
                                !! ridging scheme. This is defaulted to zero, but a reasonable
@@ -87,6 +89,10 @@ subroutine ice_ridging_init(G, IG, PF, CS, US)
                    "A reasonable default value for a km scale grid cell is 10^-24.",&
                    units="none", default=0.0)
   endif
+  call get_param(PF, mdl, "ICEPACK_RIDGE_PREP", CS%do_ridge_prep, &
+                 "Tell icepack_step_ridge to call ridge_prep for us. For some reason, "//&
+                 "setting this flag to .true. gives the old answer while .false. does not.",&
+                 default=.true.)
 
   ncat=IG%CatIce ! The number of sea-ice thickness categories
   nilyr=IG%NkIce ! The number of ice layers per category
@@ -121,7 +127,7 @@ subroutine ice_ridging_init(G, IG, PF, CS, US)
            conserv_check_in=.true.)
 
 end subroutine ice_ridging_init
-!
+
 !> ice_ridging is a wrapper for the icepack ridging routine ridge_ice
 subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, dt, &
                        OSS, rdg_rate, rdg_height)
@@ -351,19 +357,26 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
         rdg_conv  = -min(sh_Dd,0.0)*US%s_to_T              ! energy dissipated by convergence ...
         rdg_shear = 0.5*(del_sh-abs(sh_Dd))*US%s_to_T      ! ... and by shear
 
-        ! This was being done in ridge_prep, now private.
         aice0 = IST%part_size(i,j,0)
+        if (aice0<0.) then
+  !        call SIS_error(WARNING,'aice0<0. before call to ridge ice.')
+           aice0=0.
+        endif
+        aice = 1.0 - aice0
+
+        ! This was being done in ridge_prep within Icepack
         asum = aice0 + sum(aicen)
         divu_adv = (1.0 - asum) / dt_sec
         closing = CS%Cs_frac * rdg_shear + rdg_conv
         if (divu_adv < 0.0) closing = max(closing, -divu_adv)
         opening = closing + divu_adv
 
-        if (aice0<0.) then
-  !        call SIS_error(WARNING,'aice0<0. before call to ridge ice.')
-           aice0=0.
+        if ((G%idg_offset+i == 23) .and. (G%jdg_offset+j == 398)) then
+          print *, "ice_ridge before", asum, aice0, sum(vicen), opening, closing, divu_adv
+          print *, "ice_ridge before", aicen
+          print *, "ice_ridge before", vicen
+          print *, "ice_ridge before", krdgn
         endif
-        aice = 1.0 - aice0
 
         ntrcr = 0
   !      Tr_ptr=>NULL()
@@ -457,7 +470,7 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
                                  flux_bio,     closing,       &
                                  Tf, docleanup=.false.,       &
                                  dorebin=.false.,             &
-                                 donoprep=.false.)
+                                 doprep=CS%do_ridge_prep)
 
         if (present(rdg_rate)) rdg_rate(i,j) = (dardg1dt - dardg2dt)*US%T_to_s
         if (present(rdg_height)) rdg_height(i,j,:) = krdgn(:)*US%m_to_Z
@@ -466,6 +479,13 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
           call icepack_warnings_flush(0);
           call icepack_warnings_setabort(.false.)
           call SIS_error(WARNING,'icepack_step_ridge error');
+        endif
+
+        if ((G%idg_offset+i == 23) .and. (G%jdg_offset+j == 398)) then
+          print *, "ice_ridge after 2", sum(aicen), sum(vicen), opening, closing, hin_max(nCat)
+          print *, "ice_ridge after 2", aicen
+          print *, "ice_ridge after 2", vicen
+          print *, "ice_ridge after 2", krdgn
         endif
 
         ! pop pond off top of stack

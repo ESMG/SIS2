@@ -46,8 +46,10 @@ type, public :: ice_ridging_CS ; private
   logical :: &
   new_rdg_partic = .false., & !< .true. = new participation, .false. = Thorndike et al 75
   new_rdg_redist = .false., & !< .true. = new redistribution, .false. = Hibler 80
-  do_ridge_prep = .true.      !< .true. = call icepack_step_ridge such that it calls
-                              !! ridge_prep for us.
+  do_cleanup = .false., &     !< .true. = call icepack_step_ridge such that it calls
+                              !! itd_cleanup for us.
+  do_rebin = .false.          !< .true. = call icepack_step_ridge such that it calls
+                              !! rebin for us.
   real :: mu_rdg = 3.0 !< e-folding scale of ridged ice, new_rdg_partic (m^0.5)
   real :: area_underflow = 0.0 !< a non-dimesional fractional area underflow limit for the sea-ice
                                !! ridging scheme. This is defaulted to zero, but a reasonable
@@ -88,6 +90,14 @@ subroutine ice_ridging_init(G, IG, PF, CS, US)
                    "A fractional area limit below which ice fraction is set to zero "//&
                    "A reasonable default value for a km scale grid cell is 10^-24.",&
                    units="none", default=0.0)
+  endif
+  call get_param(PF, mdl, "ICEPACK_CLEANUP", CS%do_cleanup, &
+                 "Tell icepack_step_ridge to call itd_cleanup for us.", default=.false.)
+  call get_param(PF, mdl, "ICEPACK_REBIN", CS%do_rebin, &
+                 "Tell icepack_step_ridge to call rebin for us.", default=.false.)
+  if (.not. CS%do_cleanup .and. CS%do_rebin) then
+    call SIS_error(WARNING,"ICEPACK_REBIN needs ICEPACK_CLEANUP")
+    CS%do_cleanup = .true.
   endif
 
   ncat=IG%CatIce ! The number of sea-ice thickness categories
@@ -355,7 +365,6 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
 
         aice0 = IST%part_size(i,j,0)
         if (aice0<0.) then
-  !        call SIS_error(WARNING,'aice0<0. before call to ridge ice.')
            aice0=0.
         endif
         aice = 1.0 - aice0
@@ -457,8 +466,8 @@ subroutine ice_ridging(IST, G, IG, mca_ice, mca_snow, mca_pond, TrReg, CS, US, d
                                  aice,         fsalt,         &
                                  first_ice,    fzsal,         &
                                  flux_bio,     closing,       &
-                                 Tf, docleanup=.false.,       &
-                                 dorebin=.false.)
+                                 Tf, docleanup=CS%do_cleanup, &
+                                 dorebin=CS%do_rebin)
 
         if (present(rdg_rate)) rdg_rate(i,j) = (dardg1dt - dardg2dt)*US%T_to_s
         if (present(rdg_height)) rdg_height(i,j,:) = krdgn(:)*US%m_to_Z

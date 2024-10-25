@@ -115,7 +115,9 @@ type ice_data_type !  ice_public_type
     calving_hflx => NULL(), & !< The heat flux associated with calving, based on
                               !! the temperature difference relative to a
                               !! reference temperature, in ???.
-    flux_salt  => NULL()  !< The flux of salt out of the ocean [kg m-2 s-1].
+    flux_salt => NULL(), &    !< The flux of salt out of the ocean [kg m-2 s-1].
+    salt_left_behind => NULL() !< The flux of salt staying in the ocean during
+                               !! ice growth [kg m-2 s-1].
 
   real, pointer, dimension(:,:) :: &
     area => NULL() , &    !< The area of ocean cells [m2].  Land cells have
@@ -208,6 +210,10 @@ subroutine ice_type_slow_reg_restarts(domain, CatIce, param_file, Ice, &
   call safe_alloc_ptr(Ice%SST_C, isc, iec, jsc, jec)
   call safe_alloc_ptr(Ice%area, isc, iec, jsc, jec)
   call safe_alloc_ptr(Ice%mi, isc, iec, jsc, jec)  !NR
+
+  if (Ice%sCS%do_brine_plume) then
+    call safe_alloc_ptr(Ice%salt_left_behind, isc, iec, jsc, jec)
+  endif
 
   if (Ice%sCS%pass_stress_mag) then
     call safe_alloc_ptr(Ice%stress_mag, isc, iec, jsc, jec)
@@ -506,7 +512,7 @@ subroutine ice_model_restart(Ice, time_stamp)
   type(ice_data_type),        intent(inout) :: Ice !< The publicly visible ice data type.
   character(len=*), optional, intent(in)    :: time_stamp !< A date stamp to include in the restart file name
 
-  if (associated(Ice%Ice_restart)) then
+  if (associated(Ice%Ice_restart) .and. associated(Ice%sCS)) then
     call save_restart(Ice%restart_output_dir, Ice%Time, Ice%sCS%G, Ice%Ice_restart, IG=Ice%sCS%IG, &
                       time_stamp=time_stamp)
     if (associated(Ice%Ice_fast_restart)) then

@@ -12,13 +12,14 @@ use MOM_file_parser,          only : get_param, log_version, param_file_type, lo
 use MOM_grid,                 only : hor_index_type
 use MOM_dyn_horgrid,          only : dyn_horgrid_type
 use MOM_interpolate,          only : init_external_field, time_interp_external, time_interp_external_init
+use MOM_interpolate,          only : external_field
 use MOM_io,                   only : slasher, field_size, SINGLE_FILE
 use MOM_io,                   only : vardesc, query_vardesc, var_desc
 use MOM_open_boundary,        only : OBC_NONE
 use MOM_open_boundary,        only : OBC_DIRECTION_E, OBC_DIRECTION_W, OBC_DIRECTION_N, OBC_DIRECTION_S
 use MOM_open_boundary,        only : parse_segment_str, flood_fill, flood_fill2
 use MOM_open_boundary,        only : parse_segment_manifest_str, parse_segment_data_str
-use MOM_string_functions,     only : remove_spaces
+use MOM_string_functions,     only : extract_word, remove_spaces, uppercase, lowercase
 use MOM_time_manager,         only : set_date, time_type, time_type_to_real, operator(-)
 use MOM_array_transform,      only : rotate_array, rotate_array_pair
 use MOM_array_transform,      only : allocate_rotated_array
@@ -42,18 +43,25 @@ integer, parameter         :: MAX_OBC_FIELDS = 100  !< Maximum number of data fi
 
 !> Open boundary segment data from files (mostly).
 type, public :: ice_OBC_segment_data_type
-  integer :: fid                            !< handle from FMS associated with segment data on disk
-  character(len=8)                :: name   !< a name identifier for the segment data
+  type(external_field) :: handle            !< handle from FMS associated with segment data on disk
+  logical           :: use_IO = .false.     !< True if segment data is based on file input
+  character(len=32) :: name                 !< a name identifier for the segment data
+  character(len=8)  :: genre                !< an identifier for the segment data
+  real              :: scale                !< A scaling factor for converting input data to
+                                            !! the internal units of this field.  For salinity this would
+                                            !! be in units of [S ppt-1 ~> 1]
   real, allocatable :: buffer_src(:,:)      !< buffer for segment data located at cell faces
                                             !! and on the original vertical grid
-  integer                       :: nk_i_src !< Number of vertical levels in the source data
-  integer                       :: ncat_src !< Number of categories in the source data
+  integer           :: nk_i_src             !< Number of vertical levels in the source data
+  integer           :: ncat_src             !< Number of categories in the source data
 ! real, allocatable :: buffer_src(:,:,:)    !< buffer for segment data located at cell faces
 ! integer                         :: nk_src !< Number of vertical levels in the source data
 ! real, allocatable :: dz_src(:,:,:)        !< vertical grid cell spacing of the incoming segment
 !                                           !! data, set in [Z ~> m]
   real, allocatable :: buffer_dst(:,:,:)    !< buffer src data remapped to the target vertical grid
-  real              :: value                !< constant value if fid is equal to -1
+  real              :: value                !< A constant value for the inflow concentration if not read
+                                            !! from file, in the internal units of a field, such as [S ~> ppt]
+                                            !! for salinity.
 end type ice_OBC_segment_data_type
 
 !> Tracer on OBC segment data structure, for putting into a segment tracer registry.
@@ -63,7 +71,11 @@ type, public :: ice_OBC_segment_tracer_type
   character(len=32)          :: name                  !< tracer name used for error messages
 ! type(tracer_type), pointer :: Tr => NULL()          !< metadata describing the tracer
   real, allocatable          :: tres(:,:,:)           !< tracer reservoir array
+  real                       :: scale                 !< A scaling factor for converting the units of input
+                                                      !! data, like [S ppt-1 ~> 1] for salinity.
   logical                    :: is_initialized        !< reservoir values have been set when True
+  integer                    :: ntr_index = -1        !< index of segment tracer in the global tracer registry
+  integer                    :: fd_index = -1         !< index of segment tracer in the input fields
 end type ice_OBC_segment_tracer_type
 
 !> Registry type for tracers on segments
@@ -660,6 +672,7 @@ subroutine initialize_ice_segment_data(G, IG, US, OBC, PF)
       if (trim(filename) /= 'none') then
         OBC%update_OBC = .true. ! Data is assumed to be time-dependent if we are reading from file
         OBC%needs_IO_for_data = .true. ! At least one segment is using I/O for OBC data
+        segment%field(m)%use_IO = .true.
 !       segment%values_needed = .true. ! Indicates that i/o will be needed for
 !       this segment
         segment%field(m)%name = trim(fields(m))
@@ -758,12 +771,12 @@ subroutine initialize_ice_segment_data(G, IG, US, OBC, PF)
             endif
           endif
           segment%field(m)%buffer_src(:,:)=0.0
-          segment%field(m)%fid = init_external_field(trim(filename), trim(fieldname), &
+          segment%field(m)%handle = init_external_field(trim(filename), trim(fieldname), &
                     ignore_axis_atts=.true., threading=SINGLE_FILE)
         endif
       else
-        segment%field(m)%fid = -1
-        segment%field(m)%value = value
+        segment%field(m)%scale = scale_factor_from_name(fields(m), US, segment%tr_Reg)
+        segment%field(m)%value = segment%field(m)%scale * value
         segment%field(m)%name = trim(fields(m))
         if (segment%field(m)%name == 'UI') then
           segment%u_values_needed = .false.
@@ -797,6 +810,41 @@ subroutine initialize_ice_segment_data(G, IG, US, OBC, PF)
 
 end subroutine initialize_ice_segment_data
 
+!> Return an appropriate dimensional scaling factor for input data based on an OBC segment data
+!! name, or 1 for tracers or other fields that do not match one of the specified names.
+!! Note that calls to register_segment_tracer can come before or after calls to scale_factor_from_name.
+
+real function scale_factor_from_name(name, US, Tr_Reg)
+  character(len=*),        intent(in) :: name  !< The OBC segment data name to interpret
+  type(unit_scale_type),   intent(in) :: US  !< A dimensional unit scaling type
+  type(segment_ice_tracer_registry_type), pointer :: Tr_Reg  !< pointer to tracer registry for this segment
+
+  integer :: m
+
+  select case (trim(name))
+    case ('UI') ; scale_factor_from_name = US%m_s_to_L_T
+    case ('VI') ; scale_factor_from_name = US%m_s_to_L_T
+    case ('DVDX') ; scale_factor_from_name = US%T_to_s
+    case ('DUDY') ; scale_factor_from_name = US%T_to_s
+    case ('HI') ; scale_factor_from_name = US%m_to_Z
+    case ('CI') ; scale_factor_from_name = 1.0
+    case ('STR_D') ; scale_factor_from_name = US%RZ_to_kg_m2*US%L_T_to_m_s**2
+    case ('STR_T') ; scale_factor_from_name = US%RZ_to_kg_m2*US%L_T_to_m_s**2
+    case ('STR_S') ; scale_factor_from_name = US%RZ_to_kg_m2*US%L_T_to_m_s**2
+    case default ; scale_factor_from_name = 1.0
+  end select
+
+  if (associated(Tr_Reg) .and. (scale_factor_from_name == 1.0)) then
+    ! Check for name matches with previously registered tracers.
+    do m=1,Tr_Reg%ntseg
+      if (uppercase(name) == uppercase(Tr_Reg%Tr(m)%name)) then
+        scale_factor_from_name = Tr_Reg%Tr(m)%scale
+        exit
+      endif
+    enddo
+  endif
+
+end function scale_factor_from_name
 
 !> helper function for finding out about OBCs
 logical function open_boundary_query(OBC, apply_open_OBC, apply_specified_OBC, apply_Flather_OBC, &
@@ -1408,7 +1456,9 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
   integer :: i, j
   integer :: l_seg
   logical :: fatal_error = .False.
-  real    :: min_depth ! The minimum depth for ocean points [Z ~> m]
+  real    :: min_depth  ! The minimum depth for ocean points [Z ~> m]
+  real    :: mask_depth ! The masking depth for ocean points [Z ~> m]
+  real    :: Dmask      ! The depth for masking in the same units as G%bathyT [Z ~> m].
   integer, parameter :: cin = 3, cout = 4, cland = -1, cedge = -2
   character(len=256) :: mesg    ! Message for error messages.
   type(ice_OBC_segment_type), pointer :: segment => NULL() ! pointer to segment type list
@@ -1419,6 +1469,11 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
 
   call get_param(param_file, mdl, "MINIMUM_DEPTH", min_depth, &
                  units="m", default=0.0, scale=US%m_to_Z, do_not_log=.true.)
+  call get_param(param_file, mdl, "MASKING_DEPTH", mask_depth, &
+                 units="m", default=-9999.0, scale=US%m_to_Z, do_not_log=.true.)
+
+  Dmask = mask_depth
+  if (mask_depth == -9999.0*US%m_to_Z) Dmask = min_depth
   ! The reference depth on a dyn_horgrid is 0, otherwise would need:
   !   min_depth = min_depth - G%Z_ref
 
@@ -1506,14 +1561,14 @@ subroutine mask_outside_OBCs(G, US, param_file, OBC)
   do j=G%jsd,G%jed ; do i=G%isd,G%ied
     if (color(i,j) /= color2(i,j)) then
       fatal_error = .True.
-      write(mesg,'("MOM_open_boundary: problem with OBC segments specification at ",I5,",",I5," during\n", &
+      write(mesg,'("SIS_open_boundary: problem with OBC segments specification at ",I5,",",I5," during\n", &
           "the masking of the outside grid points.")') i, j
       call MOM_error(WARNING,"MOM register_tracer: "//mesg, all_print=.true.)
     endif
-    if (color(i,j) == cout) G%bathyT(i,j) = min_depth
+    if (color(i,j) == cout) G%bathyT(i,j) = Dmask
   enddo ; enddo
   if (fatal_error) call MOM_error(FATAL, &
-      "MOM_open_boundary: inconsistent OBC segments.")
+      "SIS_open_boundary: inconsistent OBC segments.")
 
   deallocate(color)
   deallocate(color2)
@@ -1628,7 +1683,7 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
 !   endif
 
     do m = 1,segment%num_fields
-      if (segment%field(m)%fid > 0) then
+      if (segment%field(m)%use_IO) then
         siz(1)=size(segment%field(m)%buffer_src,1)
         siz(2)=size(segment%field(m)%buffer_src,2)
 !       siz(3)=size(segment%field(m)%buffer_src,3)
@@ -1680,7 +1735,7 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
           tmp_buffer_in => tmp_buffer
         endif
 
-        call time_interp_external(segment%field(m)%fid, Time, tmp_buffer_in)
+        call time_interp_external(segment%field(m)%handle, Time, tmp_buffer_in, scale=segment%field(m)%scale)
         ! NOTE: Rotation of face-points require that we skip the final value
         if (turns /= 0) then
           ! TODO: This is hardcoded for 90 degrees, and needs to be generalized.
@@ -1752,7 +1807,7 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
         deallocate(tmp_buffer)
         if (turns /= 0) &
           deallocate(tmp_buffer_in)
-      else ! fid <= 0 (Uniform value)
+      else ! (Uniform value)
         if (.not. allocated(segment%field(m)%buffer_src)) then
           if (segment%is_E_or_W) then
             if (segment%field(m)%name == 'VI' .or. segment%field(m)%name == 'DVDX' .or. &
@@ -1776,7 +1831,7 @@ subroutine update_ice_segment_data(G, IG, US, OBC, Time)
     ! Start second loop to update all fields now that data for all fields are
     ! available.
     do m = 1,segment%num_fields
-      ! if (segment%field(m)%fid>0) then
+      ! if (segment%field(m)%use_IO) then
       ! calculate external BT velocity and transport if needed
       if (trim(segment%field(m)%name) == 'UI' .or. trim(segment%field(m)%name) == 'VI') then
         if (trim(segment%field(m)%name) == 'UI' .and. segment%is_E_or_W) then

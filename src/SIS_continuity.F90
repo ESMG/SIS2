@@ -123,7 +123,8 @@ subroutine ice_continuity(u, v, hin, h, uh, vh, dt, G, US, IG, CS, use_h_neg, ma
   do k=1,nCat ; do j=js,je ; do i=is,ie ; if (h(i,j,k) < 0.0) then
     write(mesg,'("Negative ice thickness at: ", 3i6, 1pe12.4)') i+G%idg_offset, j+G%jdg_offset, k, h(i,j,k)
     call SIS_error(WARNING, mesg, all_print=.true.)
-    call SIS_error(FATAL, 'Negative thickness input to ice_continuity().')
+    call SIS_error(WARNING, 'Negative thickness input to ice_continuity().')
+    h(i,j,k) = 0.0
   endif ; enddo ; enddo ; enddo
 
   if (CS%use_upwind2d) then

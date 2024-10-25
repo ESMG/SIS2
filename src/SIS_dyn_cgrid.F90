@@ -21,7 +21,7 @@ use MOM_file_parser,   only : get_param, log_param, read_param, log_version, par
 use MOM_domains,       only : pass_var, pass_vector, CGRID_NE, CORNER, pe_here
 use MOM_domains,       only : MOM_domain_type, clone_MOM_domain
 use MOM_hor_index,     only : hor_index_type
-use MOM_io,            only : open_file, APPEND_FILE, ASCII_FILE, MULTIPLE, SINGLE_FILE
+use MOM_io,            only : open_ASCII_file, APPEND_FILE, ASCII_FILE, MULTIPLE, SINGLE_FILE
 use MOM_io,            only : MOM_read_data
 use MOM_open_boundary, only : OBC_NONE
 use MOM_open_boundary, only : OBC_DIRECTION_E, OBC_DIRECTION_W, OBC_DIRECTION_N, OBC_DIRECTION_S
@@ -134,16 +134,14 @@ type, public :: SIS_C_dyn_CS ; private
   real :: puny                !< small number [nondim]
   real :: onemeter            !< make the units work out (hopefully) [Z ~> m]
   real :: basal_stress_cutoff !< tunable parameter for the bottom drag [nondim]
-  integer :: ncat_b           ! number of bathymetry categories
-  integer :: ncat_i           ! number of ice thickness categories (log-normal)
+  integer :: ncat_b           !< number of bathymetry categories
+  integer :: ncat_i           !< number of ice thickness categories (log-normal)
 
   real, pointer, dimension(:,:) :: Tb_u=>NULL() !< Basal stress component at u-points
                                                 !! [R Z L T-2 -> kg m-1 s-2]
   real, pointer, dimension(:,:) :: Tb_v=>NULL() !< Basal stress component at v-points
                                                 !! [R Z L T-2 -> kg m-1 s-2]
-  real, pointer, dimension(:,:) :: sigma_b=>NULL()   !< !< Bottom depth variance [Z ~> m].
-  real, pointer, dimension(:,:) :: extra_depth=>NULL() !< !< Bottom depth change for
-                                                !! better landfast ice performance [Z ~> m].
+  real, pointer, dimension(:,:) :: sigma_b=>NULL() !< Bottom depth variance [Z ~> m].
 
   logical :: FirstCall = .true. !< If true, this module has not been called before
   !>@{ Diagnostic IDs
@@ -151,6 +149,7 @@ type, public :: SIS_C_dyn_CS ; private
   integer :: id_fwx = -1, id_fwy = -1, id_sigi = -1, id_sigii = -1
   integer :: id_flfx = -1, id_flfy = -1, id_stren = -1, id_stren0 = -1
   integer :: id_ui = -1, id_vi = -1, id_Coru = -1, id_Corv = -1
+  integer :: id_ui_east = -1, id_vi_north = -1
   integer :: id_PFu = -1, id_PFv = -1, id_fpx = -1, id_fpy = -1
   integer :: id_fix_d = -1, id_fix_t = -1, id_fix_s = -1
   integer :: id_fiy_d = -1, id_fiy_t = -1, id_fiy_s = -1
@@ -164,6 +163,7 @@ type, public :: SIS_C_dyn_CS ; private
   integer :: id_sigi_hifreq = -1, id_sigii_hifreq = -1
   integer :: id_stren_hifreq = -1, id_ci_hifreq = -1
   integer :: id_siu = -1, id_siv = -1, id_sispeed = -1 ! SIMIP diagnostics
+  integer :: id_itheta = -1
   !!@}
 end type SIS_C_dyn_CS
 
@@ -190,7 +190,6 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
 #include "version_variable.h"
   character(len=40) :: mdl = "SIS_C_dyn" ! This module's name.
   character(len=200) :: filename, h2_file, inputdir
-  character(len=200) :: extra_depth_file = ""
   logical           :: debug
   real, parameter   :: missing = -1e34
 
@@ -366,9 +365,9 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
                    "Scale factor in ITD landfast ice.", &
                    units="nondim", default=1.9430)
     call get_param(param_file, mdl, "H2_FILE", h2_file, &
-                 "The path to the file containing the sub-grid-scale "//&
-                 "topographic roughness amplitude with ITD_LANDFAST.", &
-                 fail_if_missing=.true.)
+                   "The path to the file containing the sub-grid-scale "//&
+                   "topographic roughness amplitude with ITD_LANDFAST.", &
+                   fail_if_missing=.true.)
     call get_param(param_file, mdl, "INPUTDIR", inputdir, default=".")
     filename = trim(inputdir) // "/" // trim(h2_file)
     allocate(CS%sigma_b(G%isd:G%ied,G%jsd:G%jed), source=0.0)
@@ -387,13 +386,6 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
     call get_param(param_file, mdl, "BASAL_STRESS_NCAT_I", CS%ncat_i, &
                    "Number of ice thickness categories in landfast ice computation.", &
                    default=100)
-    call get_param(param_file, mdl, "BASAL_STRESS_EXTRA_DEPTH", extra_depth_file, &
-                   "Number of ice thickness categories in landfast ice computation.")
-    if (len(extra_depth_file) > 0) then
-      call SIS_error(WARNING, extra_depth_file)
-!     allocate(CS%extra_depth(G%isd:G%ied,G%jsd:G%jed), source=0.0)
-!     call MOM_read_data(filename, 'extra_depth', CS%extra_depth, G%domain, scale=US%m_to_Z**2)
-    endif
   endif
 
 !  if (len_trim(dirs%output_directory) > 0) then
@@ -473,6 +465,12 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
   CS%id_vi    = register_diag_field('ice_model', 'VI', diag%axesCv1, Time,     &
             'ice velocity - y component', 'm/s', missing_value=missing,        &
             interp_method='none', conversion=US%L_T_to_m_s)
+  CS%id_ui_east    = register_diag_field('ice_model', 'ui_east', diag%axesT1, Time,     &
+            'ice velocity - east component', 'm/s', missing_value=missing,        &
+            interp_method='none', conversion=US%L_T_to_m_s)
+  CS%id_vi_north    = register_diag_field('ice_model', 'vi_north', diag%axesT1, Time,     &
+            'ice velocity - north component', 'm/s', missing_value=missing,        &
+            interp_method='none', conversion=US%L_T_to_m_s)
   CS%id_mis  = register_diag_field('ice_model', 'MIS_tot', diag%axesT1, Time,  &
             'Mass of ice and snow at t-points', 'kg m-2', conversion=US%RZ_to_kg_m2, missing_value=missing)
   CS%id_ci0  = register_diag_field('ice_model', 'CI_tot', diag%axesT1, Time,   &
@@ -532,6 +530,8 @@ subroutine SIS_C_dyn_init(Time, G, US, param_file, diag, CS, ntrunc)
             'ice strain rate magnitude', 's-1', conversion=US%s_to_T, missing_value=missing)
   CS%id_del_sh_min = register_diag_field('ice_model', 'del_sh_min', diag%axesT1, Time, &
             'minimum ice strain rate magnitude', 's-1', conversion=US%s_to_T, missing_value=missing)
+  CS%id_itheta = register_diag_field('ice_model', 'itheta', diag%axesT1, Time, &
+            'ice atan(shear/divergence)', 'rad', missing_value=missing)
 
   CS%id_ui_hifreq = register_diag_field('ice_model', 'ui_hf', diag%axesCu1, Time, &
             'ice velocity - x component', 'm/s', missing_value=missing,        &
@@ -649,7 +649,11 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                 ! and varies with the grid spacing.
     dx2T, dy2T, &   ! dx^2 or dy^2 at T points [L2 ~> m2].
     dx_dyT, dy_dxT, &  ! dx/dy or dy_dx at T points [nondim].
-    siu, siv, sispeed  ! diagnostics on T points [L T-1 ~> m s-1].
+    siu, siv, sispeed, & ! diagnostics on T points [L T-1 ~> m s-1].
+    itheta, &  ! Angle given by atan(shear/divergence)
+    ui_east, & ! Surface velocity due east component [L T-1 ~> m s-1]
+    vi_north   ! Surface velocity due north component [L T-1 ~> m s-1]
+
 
   real, dimension(SZIB_(G),SZJ_(G)) :: &
     fxic, &   ! Zonal force due to internal stresses [R Z L T-2 ~> Pa].
@@ -756,6 +760,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
   real :: m_neglect2 ! A tiny mass per unit area squared [R2 Z2 ~> kg2 m-4].
   real :: m_neglect4 ! A tiny mass per unit area to the 4th power [R4 Z4 ~> kg4 m-8].
   real :: sum_area   ! The sum of ocean areas around a vorticity point [L2 ~> m2].
+  real :: half_pi    ! pi/2.
 
   type(time_type) :: &
     time_it_start, &  ! The starting time of the iterative steps.
@@ -777,6 +782,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
          "SIS_C_dynamics is written to require a 2-point halo or 1-point and symmetric memory.")
 
   halo_sh_Ds = min(isc-G%isd, jsc-G%jsd, 2)
+  half_pi = 2 * atan(1.0)
 
   if (associated(OBC)) then
     if (OBC%OBC_pe) apply_OBC = .true.
@@ -1329,7 +1335,13 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
 
     ! calculate viscosities - how often should we do this ?
 !$OMP parallel do default(none) shared(isc,iec,jsc,jec,del_sh,zeta,sh_Dd,sh_Dt, &
-!$OMP                                  I_EC2,sh_Ds,pres_mice,mice,del_sh_min_pr)
+!$OMP                                  I_EC2,sh_Ds,pres_mice,mice,del_sh_min_pr, &
+!$OMP                                  itheta)
+    if (CS%id_itheta > 0) then
+      do j=jsc-1,jec+1 ; do i=isc-1,iec+1
+        itheta(i,j) = 0.0
+      enddo ; enddo
+    endif
     do j=jsc-1,jec+1 ; do i=isc-1,iec+1
       ! Averaging the squared shearing strain is larger than squaring
       ! the averaged strain.  I don't know what is better. -RWH
@@ -1337,6 +1349,12 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
                    (0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
                             (sh_Ds(I-1,J) + sh_Ds(I,J-1))))**2 ) ) ! H&D eqn 9
 
+      if (CS%id_itheta > 0 .and. ci(i,j) > 0.0 .and. sh_Dd(i,j) /= 0.0) then
+        itheta(i,j) = atan( 0.25 * ((sh_Ds(I-1,J-1) + sh_Ds(I,J)) + &
+                                    (sh_Ds(I-1,J) + sh_Ds(I,J-1))) &
+                                     / abs(sh_Dd(i,j)) )
+        if (itheta(i,j) < 0.0) itheta(i,j) = itheta(i,j) + half_pi
+      endif
       if (max(del_sh(i,j), del_sh_min_pr(i,j)*pres_mice(i,j)) /= 0.) then
         zeta(i,j) = 0.5*pres_mice(i,j)*mice(i,j) / &
            max(del_sh(i,j), del_sh_min_pr(i,j)*pres_mice(i,j))
@@ -1861,6 +1879,17 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
       call post_SIS_data(CS%id_stren0, diag_val, CS%diag)
     endif
 
+    if (CS%id_ui_east > 0 .or. CS%id_vi_north > 0) then
+      do j=jsc,jec ; do i=isc,iec
+        ui_east(i,j) = ((0.5*(ui(I-1,j) + ui(I,j))) * G%cos_rot(i,j)) + &
+                       ((0.5*(vi(i,J-1) + vi(i,J))) * G%sin_rot(i,j))
+        vi_north(i,j) = ((0.5*(vi(i,J-1) + vi(i,J))) * G%cos_rot(i,j)) - &
+                        ((0.5*(ui(I-1,j) + ui(I,j))) * G%sin_rot(i,j))
+      enddo ; enddo
+      if (CS%id_ui_east > 0 ) call post_SIS_data(CS%id_ui_east, ui_east, CS%diag)
+      if (CS%id_vi_north > 0 ) call post_SIS_data(CS%id_vi_north, vi_north, CS%diag)
+    endif
+
     if (CS%id_ui>0) call post_SIS_data(CS%id_ui, ui, CS%diag)
     if (CS%id_vi>0) call post_SIS_data(CS%id_vi, vi, CS%diag)
     if (CS%id_miu>0) call post_SIS_data(CS%id_miu, mi_u, CS%diag)
@@ -1878,6 +1907,7 @@ subroutine SIS_C_dynamics(ci, mis, mice, ui, vi, uo, vo, fxat, fyat, &
     if (CS%id_sh_s>0) call post_SIS_data(CS%id_sh_s, sh_Ds, CS%diag)
 
     if (CS%id_del_sh>0) call post_SIS_data(CS%id_del_sh, del_sh, CS%diag)
+    if (CS%id_itheta>0) call post_SIS_data(CS%id_itheta, itheta, CS%diag)
     if (CS%id_del_sh_min>0) then
       do j=jsc,jec ; do i=isc,iec
         diag_val(i,j) = del_sh_min_pr(i,j)*pres_mice(i,j)
@@ -2051,7 +2081,7 @@ subroutine limit_stresses(pres_mice, mice, str_d, str_t, str_s, G, US, CS, OBC, 
   endif
 
 !    This commented out version seems to work, but is not obviously better than
-! treating each component separately, and the later is simpler.
+! treating each component separately, and the latter is simpler.
 !  EC2 = CS%EC**2
 !  do J=jsc-1,jec ; do I=isc-1,iec
 !    ! Rescale str_s based on interpolated values of str_d and str_t, which works
@@ -2273,8 +2303,9 @@ end subroutine basal_stress_coeff_C
 !! a normal distribution with sigma_b = 2.5d0. An improvement would
 !! be to provide the distribution based on high resolution data.
 !!
-!! Dupont, F. Dumont, D., Lemieux, J.F., Dumas-Lefebvre, E., Caya, A.
-!! in prep.
+!! Dupont, F., D. Dumont, J.F. Lemieux, E. Dumas-Lefebvre, A. Caya (2022).
+!! A probabilistic seabed-ice keel interaction model, The Cryosphere, 16,
+!! 1963-1977.
 !!
 !! authors: D. Dumont, J.F. Lemieux, E. Dumas-Lefebvre, F. Dupont
 !!
@@ -2322,8 +2353,8 @@ subroutine basal_stress_coeff_itd(G, IG, IST, sea_lev, CS)
   real :: rho_water  ! water density [R ~> kg m-3]
   real :: pi         ! [nondim]
   integer :: i, ii, j, isc, iec, jsc, jec, k, n, ncat
-  real :: ci_u ! Concentration at u-points [nondim]
-  real :: ci_v ! Concentration at u-points [nondim]
+  real :: ci_u       ! Concentration at u-points [nondim]
+  real :: ci_v       ! Concentration at u-points [nondim]
 
   isc = G%isc ; iec = G%iec ; jsc = G%jsc ; jec = G%jec
   ncat = IG%CatIce
@@ -2361,7 +2392,6 @@ subroutine basal_stress_coeff_itd(G, IG, IST, sea_lev, CS)
           sea_lev(i,j) < CS%basal_stress_max_depth) then
 
         mu_b = G%bathyT(i,j) + sea_lev(i,j)         ! (hwater) mean of PDF (normal dist) bathymetry
-        if (associated(CS%extra_depth)) mu_b = mu_b + CS%extra_depth(i,j)
         wid_i = CS%basal_stress_max_depth/CS%ncat_i    ! width of ice categories
         wid_b = 6.0*CS%sigma_b(i,j)/CS%ncat_b          ! width of bathymetry categories (6 sigma_b = 2x3 sigma_b)
 
@@ -2377,50 +2407,54 @@ subroutine basal_stress_coeff_itd(G, IG, IST, sea_lev, CS)
 
         ! parameters for the log-normal
         mu_i    = log(m_i/(CS%onemeter * sqrt(1.0 + v_i/m_i**2)))
-        sigma_i = max(sqrt(log(1.0 + v_i/m_i**2)), CS%puny)
+        sigma_i = sqrt(log(1.0 + v_i/m_i**2))
 
         ! max thickness associated with percentile of log-normal PDF
-        ! x_kmax=x997 was obtained from an optimization procedure (Dupont et al.)
+        ! x_kmax=x997 was obtained from an optimization procedure (Dupont et al. 2022)
 
-        x_kmax = CS%onemeter * exp(mu_i + sqrt(2.0*sigma_i)*CS%basal_stress_cutoff)
+        if (sigma_i > 0) then
+          x_kmax = CS%onemeter * exp(mu_i + sqrt(2.0*sigma_i)*CS%basal_stress_cutoff)
 
-        ! Set x_kmax to hlev of the last category where there is ice
-        ! when there is no ice in the last category
-        cut = x_k(CS%ncat_i)
-        do n = ncat,-1,1
-          if (acat(n) < CS%puny) then
-            cut = hin_max(n-1)
-          else
-            exit
-          endif
-        enddo
-        x_kmax = min(cut, x_kmax)
+          ! Set x_kmax to hlev of the last category where there is ice
+          ! when there is no ice in the last category
+          cut = x_k(CS%ncat_i)
+          do n = ncat,-1,1
+            if (acat(n) < CS%puny) then
+              cut = hin_max(n-1)
+            else
+              exit
+            endif
+          enddo
+          x_kmax = min(cut, x_kmax)
 
-        g_k(:) = exp(-(log(x_k(:)/CS%onemeter) - mu_i) ** 2 / (2.0 * sigma_i ** 2)) / &
-                 (x_k(:) * sigma_i * sqrt(2.0 * pi))
+          g_k(:) = exp(-(log(x_k(:)/CS%onemeter) - mu_i) ** 2 / (2.0 * sigma_i ** 2)) / &
+                   (x_k(:) * sigma_i * sqrt(2.0 * pi))
 
-        b_n(:)  = exp(-(y_n(:) - mu_b) ** 2 / (2.0 * CS%sigma_b(i,j) ** 2)) / (CS%sigma_b(i,j) * sqrt(2.0*pi))
+          b_n(:)  = exp(-(y_n(:) - mu_b) ** 2 / (2.0 * CS%sigma_b(i,j) ** 2)) / (CS%sigma_b(i,j) * sqrt(2.0*pi))
 
-        P_x(:) = g_k(:) * wid_i
-        P_y(:) = b_n(:) * wid_b
+          P_x(:) = g_k(:) * wid_i
+          P_y(:) = b_n(:) * wid_b
 
-        do n =1, CS%ncat_i
-          if (x_k(n) > x_kmax) P_x(n)=0.0
-        enddo
+          do n =1, CS%ncat_i
+            if (x_k(n) > x_kmax) P_x(n)=0.0
+          enddo
 
-        ! calculate Tb factor at t-location
-        do n=1, CS%ncat_i
-          gt(:) = (y_n(:) <= rho_ice*x_k(n)/rho_water)
-          tmp(:) = merge(1,0,gt(:))
-          ii = sum(tmp)
-          if (ii == 0) then
-            tb_tmp(n) = 0.0
-          else
-            tb_tmp(n) = max(CS%basal_stress_mu_s * G%g_Earth * P_x(n) * &
-                        sum(P_y(1:ii)*(rho_ice*x_k(n) - rho_water*y_n(1:ii))), 0.0)
-          endif
-        enddo
-        Tbt(i,j) = sum(tb_tmp) * exp(-CS%lemieux_alphab * (1.0 - atot))
+          ! calculate Tb factor at t-location
+          do n=1, CS%ncat_i
+            gt(:) = (y_n(:) <= rho_ice*x_k(n)/rho_water)
+            tmp(:) = merge(1,0,gt(:))
+            ii = sum(tmp)
+            if (ii == 0) then
+              tb_tmp(n) = 0.0
+            else
+              tb_tmp(n) = max(CS%basal_stress_mu_s * G%g_Earth * P_x(n) * &
+                          sum(P_y(1:ii)*(rho_ice*x_k(n) - rho_water*y_n(1:ii))), 0.0)
+            endif
+          enddo
+          Tbt(i,j) = sum(tb_tmp) * exp(-CS%lemieux_alphab * (1.0 - atot))
+        else
+          Tbt(i,j) = 0.0
+        endif
       endif
     enddo
   enddo
@@ -2499,7 +2533,6 @@ subroutine SIS_C_dyn_read_alt_restarts(CS, G, US, Ice_restart, restart_dir)
   ! then discarded.
   real, allocatable, target, dimension(:,:) :: str_tmp
   type(MOM_domain_type),   pointer :: domain_tmp => NULL()
-  real :: stress_rescale
   logical :: read_values
   integer :: i, j, id
 
@@ -2539,21 +2572,14 @@ subroutine SIS_C_dyn_read_alt_restarts(CS, G, US, Ice_restart, restart_dir)
   if (allocated(str_tmp)) deallocate(str_tmp)
   if (associated(domain_tmp)) then ; deallocate(domain_tmp%mpp_domain) ; deallocate(domain_tmp) ; endif
 
-  ! Now redo the dimensional rescaling of the stresses if necessary.
-  if (US%s_to_T_restart*US%m_to_L_restart*US%kg_m3_to_R_restart*US%m_to_Z_restart /= 0.0) then
-    stress_rescale = US%s_to_T_restart**2 / &
-                     (US%kg_m3_to_R_restart * US%m_to_Z_restart * US%m_to_L_restart**2)
-    do J=G%jsc-1,G%jec ; do I=G%isc-1,G%iec
-      CS%str_s(I,J) = stress_rescale * CS%str_s(I,J)
-      if (abs(CS%str_s(I,J)) < CS%str_underflow) CS%str_s(I,J) = 0.0
-    enddo ; enddo
-    do j=G%jsc,G%jec ; do i=G%isc,G%iec
-      CS%str_d(i,j) = stress_rescale * CS%str_d(i,j)
-      CS%str_t(i,j) = stress_rescale * CS%str_t(i,j)
-      if (abs(CS%str_d(i,j)) < CS%str_underflow) CS%str_d(i,j) = 0.0
-      if (abs(CS%str_t(i,j)) < CS%str_underflow) CS%str_t(i,j) = 0.0
-    enddo ; enddo
-  endif
+  ! Zero out any excessively small stresses from the restart files.
+  do J=G%jsc-1,G%jec ; do I=G%isc-1,G%iec
+    if (abs(CS%str_s(I,J)) < CS%str_underflow) CS%str_s(I,J) = 0.0
+  enddo ; enddo
+  do j=G%jsc,G%jec ; do i=G%isc,G%iec
+    if (abs(CS%str_d(i,j)) < CS%str_underflow) CS%str_d(i,j) = 0.0
+    if (abs(CS%str_t(i,j)) < CS%str_underflow) CS%str_t(i,j) = 0.0
+  enddo ; enddo
 
 end subroutine SIS_C_dyn_read_alt_restarts
 
@@ -2592,8 +2618,8 @@ subroutine write_u_trunc(I, j, ui, u_IC, uo, mis, fxoc, fxic, Cor_u, PFu, fxat, 
   ! Open up the file for output if this is the first call.
     if (CS%u_file < 0) then
       if (len_trim(CS%u_trunc_file) < 1) return
-      call open_file(CS%u_file, trim(CS%u_trunc_file), action=APPEND_FILE, &
-                     form=ASCII_FILE, threading=MULTIPLE, fileset=SINGLE_FILE)
+      call open_ASCII_file(CS%u_file, trim(CS%u_trunc_file), &
+          action=APPEND_FILE)
       if (CS%u_file < 0) then
         call SIS_error(NOTE, 'Unable to open file '//trim(CS%u_trunc_file)//'.')
         return
@@ -2668,8 +2694,8 @@ subroutine write_v_trunc(i, J, vi, v_IC, vo, mis, fyoc, fyic, Cor_v, PFv, fyat, 
   ! Open up the file for output if this is the first call.
     if (CS%v_file < 0) then
       if (len_trim(CS%v_trunc_file) < 1) return
-      call open_file(CS%v_file, trim(CS%v_trunc_file), action=APPEND_FILE, &
-                     form=ASCII_FILE, threading=MULTIPLE, fileset=SINGLE_FILE)
+      call open_ASCII_file(CS%v_file, trim(CS%v_trunc_file), &
+          action=APPEND_FILE)
       if (CS%v_file < 0) then
         call SIS_error(NOTE, 'Unable to open file '//trim(CS%v_trunc_file)//'.')
         return
@@ -2718,7 +2744,6 @@ subroutine SIS_C_dyn_end(CS)
   if (associated(CS%Tb_u)) deallocate(CS%Tb_u)
   if (associated(CS%Tb_v)) deallocate(CS%Tb_v)
   if (associated(CS%sigma_b)) deallocate(CS%sigma_b)
-  if (associated(CS%extra_depth)) deallocate(CS%extra_depth)
 
   deallocate(CS)
 end subroutine SIS_C_dyn_end

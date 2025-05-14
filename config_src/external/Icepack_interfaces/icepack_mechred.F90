@@ -1,15 +1,14 @@
-      module icepack_mechred
+module icepack_mechred
 
-      use icepack_kinds
-      use icepack_tracers, only : n_iso, n_aero
+  use icepack_kinds, only : int_kind, dbl_kind, log_kind
+  use icepack_tracers, only : n_iso, n_aero
 
-      implicit none
+  implicit none
 
       private
       public :: icepack_step_ridge
       contains
 
-!-----------------------------------------------------------------------
 !> Interface for updating the sea-ice state due to ice ridging processes
 !! using Icepack.
 
@@ -33,18 +32,18 @@
                                     dvirdgndt,                   &
                                     araftn,       vraftn,        &
                                     aice,         fsalt,         &
-                                    first_ice,    fzsal,         &
+                                    first_ice,                   &
                                     flux_bio,     closing,       &
-                                    Tf, docleanup=.false.,      &
-                                    dorebin=.false.)
+                                    Tf,                          &
+                                    docleanup,    dorebin)
 
       real (kind=dbl_kind), intent(in) :: &
          dt        !< The time step over which ridging occurs [s]
 
       integer (kind=int_kind), intent(in) :: &
-         ndtd      !< Thenumber of dynamics subcycles
+         ndtd      !< The number of dynamics subcycles
 
-      real (kind=dbl_kind), dimension(0:ncat), intent(inout) :: &
+      real (kind=dbl_kind), dimension(0:), intent(inout) :: &
          hin_max   !< category limits [m]
 
       integer (kind=int_kind), dimension (:), intent(in) :: &
@@ -71,9 +70,6 @@
          fresh    , & !< fresh water flux to ocean [kg m2 s-1]
          fsalt    , & !< salt flux to ocean [kg m2 s-1]
          fhocn        !< net heat flux to ocean [W m-2]
-
-      real (kind=dbl_kind), intent(inout), optional :: &
-         fzsal        !< zsalinity flux to ocean [kg m2 s-1] (deprecated)
 
       real (kind=dbl_kind), intent(inout), optional :: &
          closing      !< rate of closing due to divergence/shear [s-1]
@@ -104,7 +100,7 @@
          first_ice    !< True until ice forms
       real (kind=dbl_kind), intent(in) :: &
          Tf           !< freezing temperature
-      logical (kind=log_kind), dimension(:), intent(in), optional :: &
+      logical (kind=log_kind), intent(in), optional :: &
          docleanup, & !< True to call cleanup_itd in Icepack
          dorebin      !< True to call rebin in Icepack
 

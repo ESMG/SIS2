@@ -2131,7 +2131,6 @@ subroutine SIS_C_dyn_read_alt_restarts(CS, G, US, Ice_restart, restart_dir)
   integer :: i, j, id
 
   if (.not.associated(Ice_restart)) return
-  CS%str_underflow = 0.0
   if (G%symmetric .and. (.not.query_initialized(Ice_restart, 'sym_str_s'))) then
 
     call clone_MOM_domain(G%domain, domain_tmp, symmetric=.false., &

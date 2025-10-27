@@ -1781,8 +1781,6 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                               ! from an input file.
   real,  allocatable, dimension(:) :: &
     hlim_vals                 ! List of lower limits on ice thickness categories.
-  logical :: do_brine_plume   ! If true, keep track of how much salt is left in the ocean
-                              ! during ice formation.
   logical :: Verona
   logical :: split_fast_slow_flag
   logical :: read_aux_restart
@@ -2021,10 +2019,6 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
   call get_param(param_file, mdl, "READ_HLIM_VALS", read_hlim_vals, &
                  "If true, read the lower limits on the ice thickness"//&
                  "categories.", default=.false.)
-  call get_param(param_file, mdl, "DO_BRINE_PLUME", do_brine_plume, &
-                 "If true, keep track of the salt left in the ocean during "//&
-                 "ice formation.", default=.false., &
-                 do_not_log=.true.) ! Defer logging to SIS_slow_thermo.
 
   nCat_dflt = 5 ; if (slab_ice) nCat_dflt = 1
   opm_dflt = 0.0 ; if (redo_fast_update) opm_dflt = 1.0e-40

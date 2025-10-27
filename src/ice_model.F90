@@ -1183,9 +1183,9 @@ subroutine set_ice_surface_state(Ice, IST, OSS, Rad, FIA, G, US, IG, fCS)
     call chksum(G%mask2dT(isc:iec,jsc:jec), "Intermed G%mask2dT")
 !   if (allocated(OSS%u_ocn_C) .and. allocated(OSS%v_ocn_C)) &
 !     call uvchksum(OSS%u_ocn_C, "OSS%u_ocn_C", &
-!                   OSS%v_ocn_C, "OSS%v_ocn_C", G%HI, haloshift=1, scale=US%L_T_to_m_s)
+!                   OSS%v_ocn_C, "OSS%v_ocn_C", G%HI, haloshift=1, unscale=US%L_T_to_m_s)
 !   if (allocated(OSS%u_ocn_B)) &
-!     call Bchksum(OSS%u_ocn_B, "OSS%u_ocn_B", G%HI, haloshift=1, scale=US%L_T_to_m_s)
+!     call Bchksum(OSS%u_ocn_B, "OSS%u_ocn_B", G%HI, haloshift=1, unscale=US%L_T_to_m_s)
 !   if (allocated(OSS%v_ocn_B)) &
 !     call Bchksum(OSS%v_ocn_B, "OSS%v_ocn_B", G%HI, haloshift=1)
     call chksum(G%sin_rot(isc:iec,jsc:jec), "G%sin_rot")
@@ -1775,6 +1775,8 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                               ! after a restart.Provide a switch to turn this option off.
   logical :: recategorize_ice ! If true, adjust the distribution of the ice among thickness
                               ! categories after initialization.
+  logical :: do_brine_plume   ! If true, keep track of how much salt is left in the ocean
+                              ! during ice formation.
   logical :: read_hlim_vals   ! If true, read the list of ice thickness lower limits
                               ! from an input file.
   real,  allocatable, dimension(:) :: &
@@ -2012,6 +2014,10 @@ subroutine ice_model_init(Ice, Time_Init, Time, Time_step_fast, Time_step_slow, 
                  "If true, allow ice to be transmuted directly into seawater with a spatially "//&
                  "varying rate as a form of outflow open boundary condition.", &
                  default=.false., do_not_log=.true.) ! Defer logging to SIS_slow_thermo.
+  call get_param(param_file, mdl, "DO_BRINE_PLUME", do_brine_plume, &
+                 "If true, keep track of the salt left in the ocean during "//&
+                 "ice formation.", default=.false., &
+                 do_not_log=.true.) ! Defer logging to SIS_slow_thermo.
   call get_param(param_file, mdl, "READ_HLIM_VALS", read_hlim_vals, &
                  "If true, read the lower limits on the ice thickness"//&
                  "categories.", default=.false.)
